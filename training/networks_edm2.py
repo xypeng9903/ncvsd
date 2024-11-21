@@ -443,9 +443,6 @@ class UNetEncoder(torch.nn.Module):
         self.emb_fourier = MPFourier(cnoise)
         self.emb_noise = MPConv(cnoise, cemb, kernel=[])
         self.emb_label = MPConv(label_dim, cemb, kernel=[]) if label_dim != 0 else None
-        self.emb_conditioning = MPConv(conditioning_channels, cemb, kernel=[3,3]) if conditioning_channels != 0 else None
-        if self.emb_conditioning is not None:
-            self.emb_conditioning.weight.data.zero_()
 
         # Encoder.
         self.enc = torch.nn.ModuleDict()
@@ -457,6 +454,9 @@ class UNetEncoder(torch.nn.Module):
                 cin = cout
                 cout = channels
                 self.enc[f'{res}x{res}_conv'] = MPConv(cin, cout, kernel=[3,3])
+                self.emb_conditioning = MPConv(conditioning_channels, cout, kernel=[3,3]) if conditioning_channels != 0 else None
+                if self.emb_conditioning is not None:
+                    self.emb_conditioning.weight.data.zero_()
                 if is_controlnet:
                     zero_conv = MPConv(cout, cout, kernel=[1,1])
                     zero_conv.weight.data.zero_()
@@ -476,7 +476,7 @@ class UNetEncoder(torch.nn.Module):
                     zero_conv.weight.data.zero_()
                     self.controlnet_conv[f'{res}x{res}_block{idx}'] = zero_conv
 
-    def forward(self, x, noise_labels, class_labels):
+    def forward(self, x, noise_labels, class_labels, condition_labels=None):
         # Embedding.
         emb = self.emb_noise(self.emb_fourier(noise_labels))
         if self.emb_label is not None:
@@ -488,9 +488,7 @@ class UNetEncoder(torch.nn.Module):
         skips = []
         for name, block in self.enc.items():
             if 'conv' in name:
-                x = block(x)
-                if self.emb_conditioning is not None:
-                    emb = emb + self.emb_conditioning(x)
+                x = block(x) if self.emb_conditioning is None else block(x) + self.emb_conditioning(condition_labels)
             else: 
                 x = block(x, emb)
             if self.controlnet_conv is not None:
@@ -564,7 +562,7 @@ class UNetDecoder(torch.nn.Module):
                 self.dec[f'{res}x{res}_block{idx}'] = Block(cin, cout, cemb, flavor='dec', attention=(res in attn_resolutions), **block_kwargs)
         self.out_conv = MPConv(cout, img_channels, kernel=[3,3])
 
-    def forward(self, x, skips, noise_labels, class_labels, additional_skips=None):
+    def forward(self, x, skips, noise_labels, class_labels, additional_x=None, additional_skips=None):
         # Embedding.
         emb = self.emb_noise(self.emb_fourier(noise_labels))
         if self.emb_label is not None:
@@ -572,6 +570,8 @@ class UNetDecoder(torch.nn.Module):
         emb = mp_silu(emb)
 
         # controlnet
+        if additional_x is not None:
+            x = x + additional_x
         if additional_skips is not None:
             skips = [skips[i] + additional_skips[i] for i in range(len(skips))]
 
