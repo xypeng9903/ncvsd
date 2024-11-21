@@ -653,6 +653,7 @@ class UNetEncoderPrecond(torch.nn.Module, BaseAdapter):
     def init_from_pretrained(self, net: Precond):
         unet = net.unet
         self.encoder.load_state_dict(unet.state_dict(), strict=False)
+        
 #----------------------------------------------------------------------------
 # UNet decoder preconditioning 
 
