@@ -612,7 +612,7 @@ class BaseAdapter:
 # UNet encoder preconditioning 
 
 @persistence.persistent_class
-class UNetEncoderPrecond(torch.nn.Module, BaseAdapter):
+class PrecondUNetEncoder(torch.nn.Module, BaseAdapter):
     def __init__(self,
         img_resolution,         # Image resolution.
         img_channels,           # Image channels.
@@ -658,7 +658,7 @@ class UNetEncoderPrecond(torch.nn.Module, BaseAdapter):
 # UNet decoder preconditioning 
 
 @persistence.persistent_class
-class UNetDecoderPrecond(torch.nn.Module, BaseAdapter):
+class PrecondUNetDecoder(torch.nn.Module, BaseAdapter):
     def __init__(self,
         img_resolution,         # Image resolution.
         img_channels,           # Image channels.
