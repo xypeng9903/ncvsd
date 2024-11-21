@@ -1,0 +1,1 @@
+python generate_images.py --net=/data0/pxy/code/model_zoo/edm2/imagenet64-s.pkl --outdir=out

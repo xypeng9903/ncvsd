@@ -492,7 +492,7 @@ class UNetEncoder(torch.nn.Module):
                 if self.emb_conditioning is not None:
                     emb = emb + self.emb_conditioning(x)
             else: 
-                block(x, emb)
+                x = block(x, emb)
             if self.controlnet_conv is not None:
                 skips.append(self.controlnet_conv[name](x))
             else:
@@ -500,13 +500,7 @@ class UNetEncoder(torch.nn.Module):
 
         return x, skips
     
-    def load_from_unet(self, unet: UNet):
-        self.enc.load_state_dict(unet.enc.state_dict())
-        self.emb_fourier.load_state_dict(unet.emb_fourier.state_dict())
-        self.emb_noise.load_state_dict(unet.emb_noise.state_dict())
-        if self.emb_label is not None:
-            self.emb_label.load_state_dict(unet.emb_label.state_dict())
-    
+
 #----------------------------------------------------------------------------
 # LoRA UNet decoder
 
@@ -589,13 +583,6 @@ class UNetDecoder(torch.nn.Module):
         x = self.out_conv(x, gain=self.out_gain)
         return x
     
-    def load_from_unet(self, unet: UNet):
-        self.dec.load_state_dict(unet.dec.state_dict())
-        self.emb_fourier.load_state_dict(unet.emb_fourier.state_dict())
-        self.emb_noise.load_state_dict(unet.emb_noise.state_dict())
-        if self.emb_label is not None:
-            self.emb_label.load_state_dict(unet.emb_label.state_dict())
-
 #----------------------------------------------------------------------------
 # Base adapter class
 
@@ -662,7 +649,10 @@ class UNetEncoderPrecond(torch.nn.Module, BaseAdapter):
         x, skips = self.encoder(x_in, c_noise, class_labels, **unet_kwargs)
         
         return x, skips
-
+    
+    def init_from_pretrained(self, net: Precond):
+        unet = net.unet
+        self.encoder.load_state_dict(unet.state_dict(), strict=False)
 #----------------------------------------------------------------------------
 # UNet decoder preconditioning 
 
@@ -687,7 +677,7 @@ class UNetDecoderPrecond(torch.nn.Module, BaseAdapter):
         self.logvar_fourier = MPFourier(logvar_channels)
         self.logvar_linear = MPConv(logvar_channels, 1, kernel=[])
 
-    def forward(self, x, skips, sigma, class_labels=None, force_fp32=False, return_logvar=False, **unet_kwargs):
+    def forward(self, x, enc_x, enc_skips, sigma, class_labels=None, force_fp32=False, return_logvar=False, **unet_kwargs):
         x = x.to(torch.float32)
         sigma = sigma.to(torch.float32).reshape(-1, 1, 1, 1)
         class_labels = None if self.label_dim == 0 else torch.zeros([1, self.label_dim], device=x.device) if class_labels is None else class_labels.to(torch.float32).reshape(-1, self.label_dim)
@@ -700,7 +690,7 @@ class UNetDecoderPrecond(torch.nn.Module, BaseAdapter):
         c_noise = sigma.flatten().log() / 4
 
         # Run the model.
-        F_x = self.decoder(x, skips, c_noise, class_labels, **unet_kwargs)
+        F_x = self.decoder(enc_x, enc_skips, c_noise, class_labels, **unet_kwargs)
         D_x = c_skip * x + c_out * F_x.to(torch.float32)
 
         # Estimate uncertainty if requested.
@@ -708,3 +698,7 @@ class UNetDecoderPrecond(torch.nn.Module, BaseAdapter):
             logvar = self.logvar_linear(self.logvar_fourier(c_noise)).reshape(-1, 1, 1, 1)
             return D_x, logvar # u(sigma) in Equation 21
         return D_x
+    
+    def init_from_pretrained(self, net: Precond):
+        unet = net.unet
+        self.decoder.load_state_dict(unet.state_dict(), strict=False)
