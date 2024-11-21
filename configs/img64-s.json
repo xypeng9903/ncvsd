@@ -1,0 +1,9 @@
+{
+    "model": {
+        "model_channels": 192,
+        "dropout": 0.0,
+        "img_resolution": 64,
+        "img_channels": 3,
+        "label_dim": 1000
+    }
+}
