@@ -98,14 +98,10 @@ def zero_module(module):
 
 @persistence.persistent_class
 class MPConv(torch.nn.Module):
-
-    adapter_layer_names = ("lora_A", "lora_B")
-
     def __init__(self, in_channels, out_channels, kernel):
         super().__init__()
         self.out_channels = out_channels
         self.weight = torch.nn.Parameter(torch.randn(out_channels, in_channels, *kernel))
-
         self._disable_adapters = True
         self._active_adapter = None
         self._adapter_names = []
@@ -176,9 +172,6 @@ class MPConv(torch.nn.Module):
 
 
 class Conv(torch.nn.Module):
-
-    adapter_layer_names = ("lora_A", "lora_B")
-
     def __init__(self, in_channels, out_channels, kernel):
         super().__init__()
         self.out_channels = out_channels
