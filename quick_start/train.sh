@@ -5,6 +5,6 @@ torchrun --standalone --nproc_per_node=1 train_edm2.py \
     --outdir="training-runs/img64-s" \
     --data="/data0/pxy/code/data/train/edm/imagenet64x64.zip" \
     --preset="presets/img64-s.json" \
-    --batch-gpu=16 \
+    --batch-gpu=8 \
     --batch=2048 \
     --duration="32Mi"

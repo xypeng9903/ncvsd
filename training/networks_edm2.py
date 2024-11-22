@@ -134,15 +134,8 @@ class MPConv(torch.nn.Module):
         self.set_adapter(adapter_name)
 
     def set_adapter(self, adapter_name):
-        for layer_name in self.adapter_layer_names:
-            module_dict = getattr(self, layer_name)
-            for key, layer in module_dict.items():
-                if key == adapter_name:
-                    layer.requires_grad_(True)
-                else:
-                    layer.requires_grad_(False)
-
         self._active_adapter = adapter_name
+        self._disable_adapters = False
 
     def disable_adapters(self):
         self._disable_adapters = True
@@ -630,7 +623,6 @@ class PrecondUNetEncoder(torch.nn.Module, BaseAdapter):
         self.sigma_data = sigma_data
         self.encoder = UNetEncoder(img_resolution=img_resolution, img_channels=img_channels, label_dim=label_dim, **unet_kwargs)
         self.logvar_fourier = MPFourier(logvar_channels)
-        self.logvar_linear = MPConv(logvar_channels, 1, kernel=[])
 
     def forward(self, x, sigma, class_labels=None, force_fp32=False, **unet_kwargs):
         x = x.to(torch.float32)

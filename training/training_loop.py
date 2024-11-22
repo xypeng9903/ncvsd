@@ -19,6 +19,7 @@ from torch_utils import distributed as dist
 from torch_utils import training_stats
 from torch_utils import persistence
 from torch_utils import misc
+import gc
 
 
 #----------------------------------------------------------------------------
@@ -261,10 +262,8 @@ def training_loop(
     # Setup dataset.
     dist.print0('Loading dataset...')
     dataset_obj = dnnlib.util.construct_class_by_name(**dataset_kwargs)
-    ref_image, ref_label = dataset_obj[0]
     dist.print0('Setting up encoder...')
     encoder = dnnlib.util.construct_class_by_name(**encoder_kwargs)
-    ref_image = encoder.encode_latents(torch.as_tensor(ref_image).to(device).unsqueeze(0))
     
     # Setup models.
     dist.print0(f'Load teacher model: {net}')
@@ -315,17 +314,23 @@ def training_loop(
             torch.zeros([batch_gpu, net.label_dim], device=device),
         ], max_nesting=2)
 
+    del net
+    
+
     # Setup training state.
     dist.print0('Setting up training state...')
     state = dnnlib.EasyDict(cur_nimg=0, total_elapsed_time=0)
     vsd_loss_fn = dnnlib.util.construct_class_by_name(**vsd_loss_kwargs)
     dsm_loss_fn = dnnlib.util.construct_class_by_name(**dsm_loss_kwargs)
-    optimizer = dnnlib.util.construct_class_by_name(params=net.parameters(), **optimizer_kwargs)
 
+    # optimizer
+    params = list(precond_enc.parameters()) + list(precond_ctrl.parameters()) + list(precond_dec.parameters())
+    optimizer = dnnlib.util.construct_class_by_name(params=params, **optimizer_kwargs)
+    
     # ddp
-    ddp_enc = torch.nn.parallel.DistributedDataParallel(precond_enc, device_ids=[device])
-    ddp_ctrl = torch.nn.parallel.DistributedDataParallel(precond_ctrl, device_ids=[device])
-    ddp_dec = torch.nn.parallel.DistributedDataParallel(precond_dec, device_ids=[device])
+    ddp_enc = torch.nn.parallel.DistributedDataParallel(precond_enc, device_ids=[device], broadcast_buffers=False)
+    ddp_ctrl = torch.nn.parallel.DistributedDataParallel(precond_ctrl, device_ids=[device], broadcast_buffers=False)
+    ddp_dec = torch.nn.parallel.DistributedDataParallel(precond_dec, device_ids=[device], broadcast_buffers=False)
     
     # ema
     ema_enc = dnnlib.util.construct_class_by_name(net=precond_enc, **ema_kwargs) if ema_kwargs is not None else None
@@ -362,6 +367,8 @@ def training_loop(
     cumulative_training_time = 0
     start_nimg = state.cur_nimg
     stats_jsonl = None
+    gc.collect()
+    torch.cuda.empty_cache()
     while True:
         done = (state.cur_nimg >= stop_at_nimg)
 
@@ -407,7 +414,7 @@ def training_loop(
         # Save network snapshot.
         if snapshot_nimg is not None and state.cur_nimg % snapshot_nimg == 0 and (state.cur_nimg != start_nimg or start_nimg == 0) and dist.get_rank() == 0:
             for ema, name in zip([ema_enc, ema_ctrl, ema_dec], ['enc', 'ctrl', 'dec']):
-                ema_list = ema.get() if ema is not None else optimizer.get_ema(net) if hasattr(optimizer, 'get_ema') else net
+                ema_list = ema.get()
                 ema_list = ema_list if isinstance(ema_list, list) else [(ema_list, '')]
                 for ema_net, ema_suffix in ema_list:
                     data = dnnlib.EasyDict(encoder=encoder, dataset_kwargs=dataset_kwargs, loss_fn=vsd_loss_fn)
@@ -440,33 +447,32 @@ def training_loop(
                 images, labels = next(dataset_iterator)
                 images = encoder.encode_latents(images.to(device))
                 vsd_loss = vsd_loss_fn(
-                    precond_enc=precond_enc, 
-                    precond_ctrl=precond_ctrl, 
-                    precond_dec=precond_dec, 
+                    precond_enc=ddp_enc.module, 
+                    precond_ctrl=ddp_ctrl.module, 
+                    precond_dec=ddp_dec.module, 
                     images=images, 
                     labels=labels.to(device)
                 )
                 dsm_loss = dsm_loss_fn(
-                    precond_enc=precond_enc, 
-                    precond_ctrl=precond_ctrl, 
-                    precond_dec=precond_dec, 
+                    precond_enc=ddp_enc.module, 
+                    precond_ctrl=ddp_ctrl.module, 
+                    precond_dec=ddp_dec.module, 
                     images=images, 
                     labels=labels.to(device)
                 )
                 r = dnnlib.util.call_func_by_name(cur_nimg=state.cur_nimg, batch_size=batch_size, **vsd_warmup_kwargs)
                 loss = vsd_loss * r + dsm_loss
                 loss.sum().mul(loss_scaling / batch_gpu_total).backward()
-                
-
+    
         # Run optimizer and update weights.
         lr = dnnlib.util.call_func_by_name(cur_nimg=state.cur_nimg, batch_size=batch_size, **lr_kwargs)
-        training_stats.report('Loss/learning_rate', lr)
         for g in optimizer.param_groups:
             g['lr'] = lr
-        if force_finite:
-            for param in net.parameters():
-                if param.grad is not None:
-                    torch.nan_to_num(param.grad, nan=0, posinf=0, neginf=0, out=param.grad)
+            if force_finite:
+                for param in g['params']:
+                    if param.grad is not None:
+                        torch.nan_to_num(param.grad, nan=0, posinf=0, neginf=0, out=param.grad)
+        
         optimizer.step()
 
         # Update EMA and training state.
