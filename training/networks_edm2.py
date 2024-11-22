@@ -83,6 +83,14 @@ class MPFourier(torch.nn.Module):
         y = y + self.phases.to(torch.float32)
         y = y.cos() * np.sqrt(2)
         return y.to(x.dtype)
+    
+#------------------------------
+# Zero module
+
+def zero_module(module):
+    for p in module.parameters():
+        nn.init.zeros_(p)
+    return module
 
 #----------------------------------------------------------------------------
 # Magnitude-preserving convolution or fully-connected layer (Equation 47)
@@ -127,8 +135,8 @@ class MPConv(torch.nn.Module):
             kernel = []
         else:
             out_channels, in_channels, *kernel = self.weight.shape
-        self.lora_A[adapter_name] = _MPConv(in_channels, r, kernel)
-        self.lora_B[adapter_name] = _MPConv(r, out_channels, kernel)
+        self.lora_A[adapter_name] = Conv(in_channels, r, kernel)
+        self.lora_B[adapter_name] = zero_module(Conv(r, out_channels, kernel))
         self.scaling[adapter_name] = lora_alpha / r
             
         self.set_adapter(adapter_name)
@@ -159,19 +167,17 @@ class MPConv(torch.nn.Module):
         else:
             result = self._forward(x, *args, **kwargs)
             torch_result_dtype = result.dtype
-            
             lora_A = self.lora_A[self._active_adapter]
             lora_B = self.lora_B[self._active_adapter]
             dropout = self.lora_dropout[self._active_adapter]
             scaling = self.scaling[self._active_adapter]
             x = x.to(lora_A.weight.dtype)
             result = result + lora_B(lora_A(dropout(x))) * scaling
-         
             result = result.to(torch_result_dtype)
         return result
 
 
-class _MPConv(torch.nn.Module):
+class Conv(torch.nn.Module):
 
     adapter_layer_names = ("lora_A", "lora_B")
 
@@ -182,16 +188,17 @@ class _MPConv(torch.nn.Module):
 
     def forward(self, x, gain=1):
         w = self.weight.to(torch.float32)
-        if self.training:
-            with torch.no_grad():
-                self.weight.copy_(normalize(w)) # forced weight normalization
-        w = normalize(w) # traditional weight normalization
-        w = w * (gain / np.sqrt(w[0].numel())) # magnitude-preserving scaling
+        # if self.training:
+        #     with torch.no_grad():
+        #         self.weight.copy_(normalize(w)) # forced weight normalization
+        # w = normalize(w) # traditional weight normalization
+        # w = w * (gain / np.sqrt(w[0].numel())) # magnitude-preserving scaling
         w = w.to(x.dtype)
         if w.ndim == 2:
             return x @ w.t()
         assert w.ndim == 4
         return torch.nn.functional.conv2d(x, w, padding=(w.shape[-1]//2,))
+    
 
 #----------------------------------------------------------------------------
 # U-Net encoder/decoder block with optional self-attention (Figure 21).
@@ -451,23 +458,17 @@ class UNetEncoder(torch.nn.Module):
                 if self.emb_conditioning is not None:
                     self.emb_conditioning.weight.data.zero_()
                 if is_controlnet:
-                    zero_conv = MPConv(cout, cout, kernel=[1,1])
-                    zero_conv.weight.data.zero_()
-                    self.controlnet_conv[f'{res}x{res}_conv'] = zero_conv
+                    self.controlnet_conv[f'{res}x{res}_conv'] = zero_module(Conv(cout, cout, kernel=[1,1]))
             else:
                 self.enc[f'{res}x{res}_down'] = Block(cout, cout, cemb, flavor='enc', resample_mode='down', **block_kwargs)
                 if is_controlnet:
-                    zero_conv = MPConv(cout, cout, kernel=[1,1])
-                    zero_conv.weight.data.zero_()
-                    self.controlnet_conv[f'{res}x{res}_down'] = zero_conv
+                    self.controlnet_conv[f'{res}x{res}_down'] = zero_module(Conv(cout, cout, kernel=[1,1]))
             for idx in range(num_blocks):
                 cin = cout
                 cout = channels
                 self.enc[f'{res}x{res}_block{idx}'] = Block(cin, cout, cemb, flavor='enc', attention=(res in attn_resolutions), **block_kwargs)
                 if is_controlnet:
-                    zero_conv = MPConv(cout, cout, kernel=[1,1])
-                    zero_conv.weight.data.zero_()
-                    self.controlnet_conv[f'{res}x{res}_block{idx}'] = zero_conv
+                    self.controlnet_conv[f'{res}x{res}_block{idx}'] = zero_module(Conv(cout, cout, kernel=[1,1]))
 
     def forward(self, x, noise_labels, class_labels, condition_labels=None):
         # Embedding.
