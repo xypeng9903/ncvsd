@@ -26,7 +26,8 @@ def setup_training_config(preset: str, **opts):
     c = dnnlib.EasyDict()
 
     # Preset.
-    preset = json.loads(open(preset))
+    with open(preset, 'r') as f:
+        preset = json.load(f)
 
     # Dataset.
     c.dataset_kwargs = dnnlib.EasyDict(class_name='training.dataset.ImageFolderDataset', path=opts.data, use_labels=opts.get('cond', True))
@@ -48,9 +49,10 @@ def setup_training_config(preset: str, **opts):
         raise click.ClickException(f'--data: Unsupported channel count {dataset_channels}')
 
     # Hyperparameters.
-    c.update(total_nimg=opts.duration, batch_size=opts.batch)
+    c.update(total_nimg=opts.duration, batch_size=opts.batch, net=opts.net)
     c.network_kwargs = dnnlib.EasyDict(**preset['network_kwargs'])
-    c.loss_kwargs = dnnlib.EasyDict(class_name='training.training_loop.NCVSDLoss', **preset['loss_kwargs'])
+    c.vsd_loss_kwargs = dnnlib.EasyDict(class_name='training.training_loop.NCVSDLoss', **preset['vsd_loss_kwargs'])
+    c.dsm_loss_kwargs = dnnlib.EasyDict(class_name='training.training_loop.DSMLoss', **preset['dsm_loss_kwargs'])
     c.lr_kwargs = dnnlib.EasyDict(func_name='training.training_loop.learning_rate_schedule', **preset['lr_kwargs'])
     c.vsd_warmup_kwargs = dnnlib.EasyDict(func_name='training.training_loop.learning_rate_schedule', **preset['vsd_warmup_kwargs'])
 
@@ -121,9 +123,10 @@ def parse_nimg(s):
 
 # Main options.
 @click.option('--outdir',           help='Where to save the results', metavar='DIR',            type=str, required=True)
+@click.option('--net',              help='Teacher EDM model', metavar='DIR',                    type=str, required=True)
 @click.option('--data',             help='Path to the dataset', metavar='ZIP|DIR',              type=str, required=True)
 @click.option('--cond',             help='Train class-conditional model', metavar='BOOL',       type=bool, default=True, show_default=True)
-@click.option('--preset',           help='Configuration preset', metavar='STR',                 type=str, default='edm2-img512-s', show_default=True)
+@click.option('--preset',           help='Configuration preset', metavar='STR',                 type=str, required=True)
 
 # Hyperparameters.
 @click.option('--duration',         help='Training duration', metavar='NIMG',                   type=parse_nimg, default=None)

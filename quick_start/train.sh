@@ -1,9 +1,10 @@
-export CUDA_VISIBLE_DEVICES=2,3
+export CUDA_VISIBLE_DEVICES=0
 
-torchrun --standalone --nproc_per_node=2 train_edm2.py \
-    --outdir="training-runs/00000-edm2-img64-xs" \
-    --data="../data/train/edm/edm2-imagenet-64x64.zip" \
-    --preset="configs/img64-s.json" \
-    --batch-gpu=32 \
+torchrun --standalone --nproc_per_node=1 train_edm2.py \
+    --net="/data0/pxy/code/model_zoo/edm2/imagenet64-s.pkl" \
+    --outdir="training-runs/img64-s" \
+    --data="/data0/pxy/code/data/train/edm/imagenet64x64.zip" \
+    --preset="presets/img64-s.json" \
+    --batch-gpu=16 \
     --batch=2048 \
     --duration="1024Mi"

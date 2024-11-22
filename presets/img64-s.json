@@ -1,6 +1,5 @@
 {
     "network_kwargs": {
-        "net": "/data0/pxy/code/model_zoo/edm2/imagenet64-s.pkl",
         "model_channels": 192,
         "dropout": 0.0,
         "img_resolution": 64,

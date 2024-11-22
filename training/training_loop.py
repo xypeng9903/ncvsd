@@ -24,7 +24,7 @@ from torch_utils import misc
 #----------------------------------------------------------------------------
 # Noise conditional variational score distillation.
 
-from networks_edm2 import PrecondUNetDecoder, PrecondUNetEncoder
+from .networks_edm2 import PrecondUNetDecoder, PrecondUNetEncoder
 
 @persistence.persistent_class
 class NCVSDLoss:
@@ -67,11 +67,11 @@ class NCVSDLoss:
         precond_dec.train()
 
         z = torch.randn_like(images)
-        sigma_hat = sigma ** (1 + self.gamma)
+        sigma_hat = sigma * (1 + self.gamma)
         y_hat = y + z * (sigma_hat ** 2 - sigma ** 2) ** 0.5
         enc_x, enc_skips = precond_enc(y_hat, sigma_hat, labels)
-        ctrl_x, ctrl_skips = precond_ctrl(y, sigma, labels, z)
-        x, logvar_x = precond_dec(y_hat, enc_x, enc_skips, sigma_hat, labels, additional_x=ctrl_x, addtional_skips=ctrl_skips, return_logvar=True)
+        ctrl_x, ctrl_skips = precond_ctrl(y, sigma, labels, condition_labels=z)
+        x, logvar_x = precond_dec(y_hat, enc_x, enc_skips, sigma_hat, labels, additional_x=ctrl_x, additional_skips=ctrl_skips, return_logvar=True)
 
         # 3. diffuse
         rnd_normal_t = torch.randn([images.shape[0], 1, 1, 1], device=images.device)
@@ -103,8 +103,8 @@ class NCVSDLoss:
             precond_dec.set_adapter('model_score')
 
             enc_x, enc_skips = precond_enc(xt, t, labels)
-            ctrl_x, ctrl_skips = precond_ctrl(y, sigma, labels)
-            s = precond_dec(xt, enc_x, enc_skips, t, labels, additional_x=ctrl_x, addtional_skips=ctrl_skips)
+            ctrl_x, ctrl_skips = precond_ctrl(y, sigma, labels, condition_labels=xt)
+            s = precond_dec(xt, enc_x, enc_skips, t, labels, additional_x=ctrl_x, additional_skips=ctrl_skips)
 
         # 6. variational score distillation
         loss_vsd = (weight_t / logvar_x.exp()) * (x - (s0 - s + x).detach()) ** 2 + logvar_x
@@ -156,11 +156,11 @@ class DSMLoss:
             precond_dec.eval()
 
             z = torch.randn_like(images)
-            sigma_hat = sigma ** (1 + self.gamma)
+            sigma_hat = sigma * (1 + self.gamma)
             y_hat = y + z * (sigma_hat ** 2 - sigma ** 2) ** 0.5
             enc_x, enc_skips = precond_enc(y_hat, sigma_hat, labels)
-            ctrl_x, ctrl_skips = precond_ctrl(y, sigma, labels, z)
-            x = precond_dec(y_hat, enc_x, enc_skips, sigma_hat, labels, additional_x=ctrl_x, addtional_skips=ctrl_skips)
+            ctrl_x, ctrl_skips = precond_ctrl(y, sigma, labels, condition_labels=z)
+            x = precond_dec(y_hat, enc_x, enc_skips, sigma_hat, labels, additional_x=ctrl_x, additional_skips=ctrl_skips)
 
         # 3. diffuse
         rnd_normal_t = torch.randn([images.shape[0], 1, 1, 1], device=images.device)
@@ -178,8 +178,8 @@ class DSMLoss:
         precond_dec.train()
 
         enc_x, enc_skips = precond_enc(xt, t, labels)
-        ctrl_x, ctrl_skips = precond_ctrl(y, sigma, labels)
-        s, logvar_s = precond_dec(xt, enc_x, enc_skips, t, labels, additional_x=ctrl_x, addtional_skips=ctrl_skips, return_logvar=True)
+        ctrl_x, ctrl_skips = precond_ctrl(y, sigma, labels, condition_labels=xt)
+        s, logvar_s = precond_dec(xt, enc_x, enc_skips, t, labels, additional_x=ctrl_x, additional_skips=ctrl_skips, return_logvar=True)
 
         loss_dsm = (weight_t / logvar_s.exp()) * (s - x.detach()) ** 2 + logvar_s
 
@@ -216,10 +216,11 @@ def training_loop(
     dataset_kwargs      = dict(class_name='training.dataset.ImageFolderDataset', path=None),
     encoder_kwargs      = dict(class_name='training.encoders.StabilityVAEEncoder'),
     data_loader_kwargs  = dict(class_name='torch.utils.data.DataLoader', pin_memory=True, num_workers=2, prefetch_factor=2),
-    loss_kwargs         = dict(class_name='training.training_loop.NCVSDLoss'),
+    vsd_loss_kwargs     = dict(class_name='training.training_loop.NCVSDLoss'),
+    dsm_loss_kwargs     = dict(class_name='training.training_loop.DSMLoss'),
     optimizer_kwargs    = dict(class_name='torch.optim.Adam', betas=(0.9, 0.99)),
     lr_kwargs           = dict(func_name='training.training_loop.learning_rate_schedule'),
-    warmup_kwargs       = dict(func_name='training.training_loop.vsd_warmup_schedule'),
+    vsd_warmup_kwargs   = dict(func_name='training.training_loop.vsd_warmup_schedule'),
     ema_kwargs          = dict(class_name='training.phema.PowerFunctionEMA'),
 
     run_dir             = '.',      # Output directory.
@@ -273,19 +274,30 @@ def training_loop(
     
     dist.print0('Constructing networks...')
 
+    def print_trainable_parameters(net, name):
+        total_params = sum(p.numel() for p in net.parameters())
+        trainable_params = sum(p.numel() for p in net.parameters() if p.requires_grad)
+        dist.print0(f'Trainable / total params in {name}: {trainable_params} / {total_params} ({trainable_params / total_params:.2%})')
+
     precond_enc = PrecondUNetEncoder(**network_kwargs)
     precond_enc.init_from_pretrained(net)
     precond_enc.requires_grad_(False)
     precond_enc.add_adapter('generative_denoiser', **lora_kwargs)
     precond_enc.add_adapter('model_score', **lora_kwargs)
     precond_enc.to(device)
+    print_trainable_parameters(precond_enc, 'precond_enc')
 
     precond_ctrl = PrecondUNetEncoder(**network_kwargs, is_controlnet=True, conditioning_channels=3) # TODO: get conditioning channels from dataset
     precond_ctrl.init_from_pretrained(net)
-    precond_ctrl.requires_grad_(False)
+    for name, param in precond_ctrl.named_parameters():
+        if 'controlnet' in name:
+            param.requires_grad = True
+        else:
+            param.requires_grad = False
     precond_ctrl.add_adapter('generative_denoiser', **lora_kwargs)
     precond_ctrl.add_adapter('model_score', **lora_kwargs)
     precond_ctrl.to(device)
+    print_trainable_parameters(precond_ctrl, 'precond_ctrl')
 
     precond_dec = PrecondUNetDecoder(**network_kwargs)
     precond_dec.init_from_pretrained(net)
@@ -293,6 +305,7 @@ def training_loop(
     precond_dec.add_adapter('generative_denoiser', **lora_kwargs)
     precond_dec.add_adapter('model_score', **lora_kwargs)
     precond_dec.to(device)
+    print_trainable_parameters(precond_dec, 'precond_dec')
 
     # Print network summary.
     if dist.get_rank() == 0:
@@ -305,13 +318,33 @@ def training_loop(
     # Setup training state.
     dist.print0('Setting up training state...')
     state = dnnlib.EasyDict(cur_nimg=0, total_elapsed_time=0)
-    ddp = torch.nn.parallel.DistributedDataParallel(net, device_ids=[device])
-    loss_fn = dnnlib.util.construct_class_by_name(**loss_kwargs)
+    vsd_loss_fn = dnnlib.util.construct_class_by_name(**vsd_loss_kwargs)
+    dsm_loss_fn = dnnlib.util.construct_class_by_name(**dsm_loss_kwargs)
     optimizer = dnnlib.util.construct_class_by_name(params=net.parameters(), **optimizer_kwargs)
-    ema = dnnlib.util.construct_class_by_name(net=net, **ema_kwargs) if ema_kwargs is not None else None
+
+    # ddp
+    ddp_enc = torch.nn.parallel.DistributedDataParallel(precond_enc, device_ids=[device])
+    ddp_ctrl = torch.nn.parallel.DistributedDataParallel(precond_ctrl, device_ids=[device])
+    ddp_dec = torch.nn.parallel.DistributedDataParallel(precond_dec, device_ids=[device])
+    
+    # ema
+    ema_enc = dnnlib.util.construct_class_by_name(net=precond_enc, **ema_kwargs) if ema_kwargs is not None else None
+    ema_ctrl = dnnlib.util.construct_class_by_name(net=precond_ctrl, **ema_kwargs) if ema_kwargs is not None else None
+    ema_dec = dnnlib.util.construct_class_by_name(net=precond_dec, **ema_kwargs) if ema_kwargs is not None else None
 
     # Load previous checkpoint and decide how long to train.
-    checkpoint = dist.CheckpointIO(state=state, net=net, loss_fn=loss_fn, optimizer=optimizer, ema=ema)
+    checkpoint = dist.CheckpointIO(
+        state=state, 
+        precond_enc=precond_enc,
+        precond_ctrl=precond_ctrl,
+        precond_dec=precond_dec,
+        vsd_loss_fn=vsd_loss_fn, 
+        dsm_loss_fn=dsm_loss_fn,
+        optimizer=optimizer, 
+        ema_enc=ema_enc, 
+        ema_ctrl=ema_ctrl, 
+        ema_dec=ema_dec
+    )
     checkpoint.load_latest(run_dir)
     stop_at_nimg = total_nimg
     if slice_nimg is not None:
@@ -373,22 +406,23 @@ def training_loop(
 
         # Save network snapshot.
         if snapshot_nimg is not None and state.cur_nimg % snapshot_nimg == 0 and (state.cur_nimg != start_nimg or start_nimg == 0) and dist.get_rank() == 0:
-            ema_list = ema.get() if ema is not None else optimizer.get_ema(net) if hasattr(optimizer, 'get_ema') else net
-            ema_list = ema_list if isinstance(ema_list, list) else [(ema_list, '')]
-            for ema_net, ema_suffix in ema_list:
-                data = dnnlib.EasyDict(encoder=encoder, dataset_kwargs=dataset_kwargs, loss_fn=loss_fn)
-                data.ema = copy.deepcopy(ema_net).cpu().eval().requires_grad_(False).to(torch.float16)
-                fname = f'network-snapshot-{state.cur_nimg//1000:07d}{ema_suffix}.pkl'
-                dist.print0(f'Saving {fname} ... ', end='', flush=True)
-                with open(os.path.join(run_dir, fname), 'wb') as f:
-                    pickle.dump(data, f)
-                dist.print0('done')
-                del data # conserve memory
+            for ema, name in zip([ema_enc, ema_ctrl, ema_dec], ['enc', 'ctrl', 'dec']):
+                ema_list = ema.get() if ema is not None else optimizer.get_ema(net) if hasattr(optimizer, 'get_ema') else net
+                ema_list = ema_list if isinstance(ema_list, list) else [(ema_list, '')]
+                for ema_net, ema_suffix in ema_list:
+                    data = dnnlib.EasyDict(encoder=encoder, dataset_kwargs=dataset_kwargs, loss_fn=vsd_loss_fn)
+                    data.ema = copy.deepcopy(ema_net).cpu().eval().requires_grad_(False).to(torch.float16)
+                    fname = f'{name}-snapshot-{state.cur_nimg//1000:07d}{ema_suffix}.pkl'
+                    dist.print0(f'Saving {fname} ... ', end='', flush=True)
+                    with open(os.path.join(run_dir, fname), 'wb') as f:
+                        pickle.dump(data, f)
+                    dist.print0('done')
+                    del data # conserve memory
 
         # Save state checkpoint.
         if checkpoint_nimg is not None and (done or state.cur_nimg % checkpoint_nimg == 0) and state.cur_nimg != start_nimg:
             checkpoint.save(os.path.join(run_dir, f'training-state-{state.cur_nimg//1000:07d}.pt'))
-            misc.check_ddp_consistency(net)
+            # TODO: misc.check_ddp_consistency(net) 
 
         # Done?
         if done:
@@ -399,22 +433,30 @@ def training_loop(
         misc.set_random_seed(seed, dist.get_rank(), state.cur_nimg)
         optimizer.zero_grad(set_to_none=True)
         for round_idx in range(num_accumulation_rounds):
-            with misc.ddp_sync(ddp, (round_idx == num_accumulation_rounds - 1)):
+            with misc.ddp_sync(ddp_enc, (round_idx == num_accumulation_rounds - 1)), \
+                misc.ddp_sync(ddp_ctrl, (round_idx == num_accumulation_rounds - 1)), \
+                misc.ddp_sync(ddp_dec, (round_idx == num_accumulation_rounds - 1)):
+                
                 images, labels = next(dataset_iterator)
                 images = encoder.encode_latents(images.to(device))
-                loss_vsd, loss_dsm = loss_fn(
+                vsd_loss = vsd_loss_fn(
                     precond_enc=precond_enc, 
                     precond_ctrl=precond_ctrl, 
                     precond_dec=precond_dec, 
                     images=images, 
                     labels=labels.to(device)
                 )
-                r = dnnlib.util.call_func_by_name(cur_nimg=state.cur_nimg, batch_size=batch_size, **warmup_kwargs)
-                training_stats.report('Loss/loss_vsd', loss_vsd)
-                training_stats.report('Loss/loss_dsm', loss_dsm)
-                training_stats.report('Loss/vsd_warmup_ratio', r)
-                loss = loss_vsd * r + loss_dsm
+                dsm_loss = dsm_loss_fn(
+                    precond_enc=precond_enc, 
+                    precond_ctrl=precond_ctrl, 
+                    precond_dec=precond_dec, 
+                    images=images, 
+                    labels=labels.to(device)
+                )
+                r = dnnlib.util.call_func_by_name(cur_nimg=state.cur_nimg, batch_size=batch_size, **vsd_warmup_kwargs)
+                loss = vsd_loss * r + dsm_loss
                 loss.sum().mul(loss_scaling / batch_gpu_total).backward()
+                
 
         # Run optimizer and update weights.
         lr = dnnlib.util.call_func_by_name(cur_nimg=state.cur_nimg, batch_size=batch_size, **lr_kwargs)
@@ -429,8 +471,16 @@ def training_loop(
 
         # Update EMA and training state.
         state.cur_nimg += batch_size
-        if ema is not None:
+        for ema in [ema_enc, ema_ctrl, ema_dec]:
             ema.update(cur_nimg=state.cur_nimg, batch_size=batch_size)
         cumulative_training_time += time.time() - batch_start_time
+        
+        # print progress
+        progress = state.cur_nimg / total_nimg
+        dist.print0(
+            f'\rProgress: [{int(progress * 50) * "="}{(50 - int(progress * 50)) * " "}] {state.cur_nimg} / {total_nimg} ({progress * 100:.2f})%',
+            f'| vsd_loss: {vsd_loss.mean().item():.4f} | dsm_loss: {dsm_loss.mean().item():.4f} | vsd_warmup_ratio: {r:.8f} | lr: {lr:.8f}', 
+            end='', flush=True
+        )
 
 #----------------------------------------------------------------------------

@@ -23,7 +23,7 @@ def normalize(x, dim=None, eps=1e-4):
         dim = list(range(1, x.ndim))
     norm = torch.linalg.vector_norm(x, dim=dim, keepdim=True, dtype=torch.float32)
     norm = torch.add(eps, norm, alpha=np.sqrt(norm.numel() / x.numel()))
-    return x / norm.to(x.dtype)
+    return x / norm.detach().to(x.dtype) # TODO: will detach() effect performance?
 
 #----------------------------------------------------------------------------
 # Upsample or downsample the given tensor with the given filter,
