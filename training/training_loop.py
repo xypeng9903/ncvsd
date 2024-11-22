@@ -30,10 +30,10 @@ from networks_edm2 import PrecondUNetDecoder, PrecondUNetEncoder
 class NCVSDLoss:
     def __init__(
         self, 
-        P_mean_sigma  = -0.4, 
-        P_std_sigma   = 1.0, 
-        P_mean_t      = -0.4, 
-        P_std_t       = 1.0,
+        P_mean_sigma  = 0.4, 
+        P_std_sigma   = 2.0, 
+        P_mean_t      = 0.4, 
+        P_std_t       = 2.0,
         gamma         = 0.414,
         sigma_data    = 0.5
     ):
@@ -55,7 +55,6 @@ class NCVSDLoss:
         # 1. sample condition y
         rnd_normal_y = torch.randn([images.shape[0], 1, 1, 1], device=images.device)
         sigma = (rnd_normal_y * self.P_std_sigma + self.P_mean_sigma).exp()
-        weight_sigma = (sigma ** 2 + self.sigma_data ** 2) / (sigma * self.sigma_data) ** 2
         y = images + torch.randn_like(images) * sigma
         
         # 2. denoising posterior sampling x ~ \mu(x|y)
@@ -85,20 +84,91 @@ class NCVSDLoss:
         y_eff = (y / sigma ** 2 + xt / t ** 2) * sigma_eff ** 2
 
         # 5. score prediction
-        # data score
-        precond_enc.disable_adapters()
-        precond_ctrl.disable_adapters()
-        precond_dec.disable_adapters()
-
-        precond_enc.eval()
-        precond_ctrl.eval()
-        precond_dec.eval()
-
         with torch.no_grad():
+            precond_enc.eval()
+            precond_ctrl.eval()
+            precond_dec.eval()
+            
+            # data score
+            precond_enc.disable_adapters()
+            precond_ctrl.disable_adapters()
+            precond_dec.disable_adapters()
+
             enc_x, enc_skips = precond_enc(y_eff, sigma_eff, labels)
             s0 = precond_dec(y_eff, enc_x, enc_skips, sigma_eff, labels)
 
-        # model score
+            # model score
+            precond_enc.set_adapter('model_score')
+            precond_ctrl.set_adapter('model_score')
+            precond_dec.set_adapter('model_score')
+
+            enc_x, enc_skips = precond_enc(xt, t, labels)
+            ctrl_x, ctrl_skips = precond_ctrl(y, sigma, labels)
+            s = precond_dec(xt, enc_x, enc_skips, t, labels, additional_x=ctrl_x, addtional_skips=ctrl_skips)
+
+        # 6. variational score distillation
+        loss_vsd = (weight_t / logvar_x.exp()) * (x - (s0 - s + x).detach()) ** 2 + logvar_x
+
+        return loss_vsd
+
+#----------------------------------------------------------------------------
+# Denoising score mathcing.
+
+@persistence.persistent_class
+class DSMLoss:
+    def __init__(
+        self, 
+        P_mean_sigma  = 0.4, 
+        P_std_sigma   = 2.0, 
+        P_mean_t      = -0.8, 
+        P_std_t       = 1.6,
+        gamma         = 0.414,
+        sigma_data    = 0.5
+    ):
+        self.P_mean_sigma = P_mean_sigma
+        self.P_std_sigma = P_std_sigma
+        self.P_mean_t = P_mean_t
+        self.P_std_t = P_std_t
+        self.gamma = gamma
+        self.sigma_data = sigma_data
+
+    def __call__(
+            self, 
+            precond_enc: PrecondUNetEncoder, 
+            precond_ctrl: PrecondUNetEncoder, 
+            precond_dec: PrecondUNetDecoder, 
+            images: torch.Tensor, 
+            labels: torch.Tensor = None
+    ):
+        # 1. sample condition y
+        rnd_normal_y = torch.randn([images.shape[0], 1, 1, 1], device=images.device)
+        sigma = (rnd_normal_y * self.P_std_sigma + self.P_mean_sigma).exp()
+        y = images + torch.randn_like(images) * sigma
+        
+        # 2. denoising posterior sampling x ~ \mu(x|y)
+        with torch.no_grad():
+            precond_enc.set_adapter('generative_denoiser')
+            precond_ctrl.set_adapter('generative_denoiser')
+            precond_dec.set_adapter('generative_denoiser')
+
+            precond_enc.eval()
+            precond_ctrl.eval()
+            precond_dec.eval()
+
+            z = torch.randn_like(images)
+            sigma_hat = sigma ** (1 + self.gamma)
+            y_hat = y + z * (sigma_hat ** 2 - sigma ** 2) ** 0.5
+            enc_x, enc_skips = precond_enc(y_hat, sigma_hat, labels)
+            ctrl_x, ctrl_skips = precond_ctrl(y, sigma, labels, z)
+            x = precond_dec(y_hat, enc_x, enc_skips, sigma_hat, labels, additional_x=ctrl_x, addtional_skips=ctrl_skips)
+
+        # 3. diffuse
+        rnd_normal_t = torch.randn([images.shape[0], 1, 1, 1], device=images.device)
+        t = (rnd_normal_t * self.P_std_t + self.P_mean_t).exp()
+        weight_t = (t ** 2 + self.sigma_data ** 2) / (t * self.sigma_data) ** 2
+        xt = x + torch.randn_like(x) * t
+
+        # 5. denoising score matching
         precond_enc.set_adapter('model_score')
         precond_ctrl.set_adapter('model_score')
         precond_dec.set_adapter('model_score')
@@ -111,15 +181,10 @@ class NCVSDLoss:
         ctrl_x, ctrl_skips = precond_ctrl(y, sigma, labels)
         s, logvar_s = precond_dec(xt, enc_x, enc_skips, t, labels, additional_x=ctrl_x, addtional_skips=ctrl_skips, return_logvar=True)
 
-        # 6. variational score distillation
-        loss_vsd = (weight_sigma / logvar_x.exp()) * (x - (s0 - s + x).detach()) ** 2 + logvar_x
-
-        # 7. denoising score matching
         loss_dsm = (weight_t / logvar_s.exp()) * (s - x.detach()) ** 2 + logvar_s
 
-        return loss_vsd, loss_dsm
-
-
+        return loss_dsm
+    
 #----------------------------------------------------------------------------
 # Learning rate decay schedule used in the paper "Analyzing and Improving
 # the Training Dynamics of Diffusion Models".
@@ -131,6 +196,15 @@ def learning_rate_schedule(cur_nimg, batch_size, ref_lr=100e-4, ref_batches=70e3
     if rampup_Mimg > 0:
         lr *= min(cur_nimg / (rampup_Mimg * 1e6), 1)
     return lr
+
+#----------------------------------------------------------------------------
+# Warmup schedule for VSD
+
+def vsd_warmup_schedule(cur_nimg, batch_size, ref_batches=10e3):
+    if ref_batches == 0:
+        return 1.0
+    r = min(cur_nimg / (ref_batches * batch_size), 1)
+    return r
 
 #----------------------------------------------------------------------------
 # Main training loop.
@@ -145,6 +219,7 @@ def training_loop(
     loss_kwargs         = dict(class_name='training.training_loop.NCVSDLoss'),
     optimizer_kwargs    = dict(class_name='torch.optim.Adam', betas=(0.9, 0.99)),
     lr_kwargs           = dict(func_name='training.training_loop.learning_rate_schedule'),
+    warmup_kwargs       = dict(func_name='training.training_loop.vsd_warmup_schedule'),
     ema_kwargs          = dict(class_name='training.phema.PowerFunctionEMA'),
 
     run_dir             = '.',      # Output directory.
@@ -334,9 +409,11 @@ def training_loop(
                     images=images, 
                     labels=labels.to(device)
                 )
+                r = dnnlib.util.call_func_by_name(cur_nimg=state.cur_nimg, batch_size=batch_size, **warmup_kwargs)
                 training_stats.report('Loss/loss_vsd', loss_vsd)
                 training_stats.report('Loss/loss_dsm', loss_dsm)
-                loss = loss_vsd + loss_dsm
+                training_stats.report('Loss/vsd_warmup_ratio', r)
+                loss = loss_vsd * r + loss_dsm
                 loss.sum().mul(loss_scaling / batch_gpu_total).backward()
 
         # Run optimizer and update weights.
