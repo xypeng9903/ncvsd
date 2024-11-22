@@ -572,12 +572,18 @@ class UNetDecoder(torch.nn.Module):
 # Base adapter class
 
 class BaseAdapter:
-
+    
     adapter_target_modules = (MPConv,)
-    _active_adapter = None
-
+    
     def __init__(self):
         super().__init__()
+        self._disable_adapters = True
+        self._active_adapter = None
+        self._adapter_names = []
+
+    @property
+    def adapter_names(self):
+        return self._adapter_names
 
     @property
     def active_adapter(self):
