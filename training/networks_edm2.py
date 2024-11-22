@@ -138,8 +138,6 @@ class MPConv(torch.nn.Module):
         self.lora_A[adapter_name] = Conv(in_channels, r, kernel)
         self.lora_B[adapter_name] = zero_module(Conv(r, out_channels, kernel))
         self.scaling[adapter_name] = lora_alpha / r
-            
-        self.set_adapter(adapter_name)
 
     def set_adapter(self, adapter_name):
         self._active_adapter = adapter_name
@@ -583,9 +581,14 @@ class UNetDecoder(torch.nn.Module):
 class BaseAdapter:
 
     adapter_target_modules = (MPConv,)
+    _active_adapter = None
 
     def __init__(self):
         super().__init__()
+
+    @property
+    def active_adapter(self):
+        return self._active_adapter
     
     def add_adapter(self, adapter_name: str, r: int, lora_alpha: int, lora_dropout: float = 0):
         for name, module in self.named_modules():
@@ -596,11 +599,13 @@ class BaseAdapter:
         for name, module in self.named_modules():
             if isinstance(module, self.adapter_target_modules):
                 module.set_adapter(adapter_name)
+        self._active_adapter = adapter_name
 
     def disable_adapters(self):
         for name, module in self.named_modules():
             if isinstance(module, self.adapter_target_modules):
                 module.disable_adapters()
+        self._active_adapter = None
 
 #----------------------------------------------------------------------------
 # UNet encoder preconditioning 
