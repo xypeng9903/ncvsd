@@ -19,7 +19,7 @@
         "P_std_t": 2.0
     },
     "lr_kwargs": {
-        "ref_lr": 0.0100,
+        "ref_lr": 0.0001,
         "ref_batches": 35000
     },
     "vsd_warmup_kwargs": {

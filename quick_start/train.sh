@@ -7,4 +7,4 @@ torchrun --standalone --nproc_per_node=1 train_edm2.py \
     --preset="presets/img64-s.json" \
     --batch-gpu=16 \
     --batch=2048 \
-    --duration="1024Mi"
+    --duration="32Mi"
