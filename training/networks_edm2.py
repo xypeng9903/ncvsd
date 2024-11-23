@@ -13,6 +13,7 @@ import torch
 from torch_utils import persistence
 from torch_utils import misc
 from torch import nn
+from torch.utils.checkpoint import checkpoint
 
 #----------------------------------------------------------------------------
 # Normalize given tensor to unit magnitude with respect to the given
@@ -418,6 +419,7 @@ class UNetEncoder(torch.nn.Module):
         label_balance       = 0.5,          # Balance between noise embedding (0) and class embedding (1).
         concat_balance      = 0.5,          # Balance between skip connections (0) and main path (1).
         is_controlnet       = False,        # If true, add zero convolutions
+        gradient_checkpoint = False,        # Use gradient checkpointing?
         conditioning_channels = 0,          # Number of conditioning channels.
         **block_kwargs,                     # Arguments for Block.
     ):
@@ -429,6 +431,7 @@ class UNetEncoder(torch.nn.Module):
         self.concat_balance = concat_balance
         self.out_gain = torch.nn.Parameter(torch.zeros([]))
         self.is_controlnet = is_controlnet
+        self.gradient_checkpoint = gradient_checkpoint
 
         # Embedding.
         self.emb_fourier = MPFourier(cnoise)
@@ -472,15 +475,26 @@ class UNetEncoder(torch.nn.Module):
         x = torch.cat([x, torch.ones_like(x[:, :1])], dim=1)
         skips = []
         for name, block in self.enc.items():
-            if 'conv' in name:
-                x = block(x) if self.emb_conditioning is None else block(x) + self.emb_conditioning(condition_labels)
-            else: 
-                x = block(x, emb)
-            if self.controlnet_conv is not None:
-                skips.append(self.controlnet_conv[name](x))
+            if self.gradient_checkpoint:
+                if 'conv' in name:
+                    x = checkpoint(block, x) if self.emb_conditioning is None \
+                        else checkpoint(block, x) + checkpoint(self.emb_conditioning, condition_labels)
+                else: 
+                    x = block(x, emb)
+                if self.controlnet_conv is not None:
+                    skips.append(checkpoint(self.controlnet_conv[name], x))
+                else:
+                    skips.append(x)
             else:
-                skips.append(x)
-
+                if 'conv' in name:
+                    x = block(x) if self.emb_conditioning is None \
+                        else block(x) + self.emb_conditioning(condition_labels)
+                else: 
+                    x = block(x, emb)
+                if self.controlnet_conv is not None:
+                    skips.append(self.controlnet_conv[name](x))
+                else:
+                    skips.append(x)
         return x, skips
     
 
@@ -501,6 +515,7 @@ class UNetDecoder(torch.nn.Module):
         attn_resolutions    = [16,8],       # List of resolutions with self-attention.
         label_balance       = 0.5,          # Balance between noise embedding (0) and class embedding (1).
         concat_balance      = 0.5,          # Balance between skip connections (0) and main path (1).
+        gradient_checkpoint = False,        # Use gradient checkpointing?
         **block_kwargs,                     # Arguments for Block.
     ):
         super().__init__()
@@ -510,6 +525,7 @@ class UNetDecoder(torch.nn.Module):
         self.label_balance = label_balance
         self.concat_balance = concat_balance
         self.out_gain = torch.nn.Parameter(torch.zeros([]))
+        self.gradient_checkpoint = gradient_checkpoint
 
         # Embedding.
         self.emb_fourier = MPFourier(cnoise)
@@ -564,7 +580,10 @@ class UNetDecoder(torch.nn.Module):
         for name, block in self.dec.items():
             if 'block' in name:
                 x = mp_cat(x, skips.pop(), t=self.concat_balance)
-            x = block(x, emb)
+            if self.gradient_checkpoint:
+                x = checkpoint(block, x, emb)
+            else:
+                x = block(x, emb)
         x = self.out_conv(x, gain=self.out_gain)
         return x
     
@@ -650,6 +669,9 @@ class PrecondUNetEncoder(torch.nn.Module, BaseAdapter):
     def init_from_pretrained(self, net: Precond):
         unet = net.unet
         self.encoder.load_state_dict(unet.state_dict(), strict=False)
+
+    def enable_gradient_checkpointing(self):
+        self.encoder.gradient_checkpoint = True
         
 #----------------------------------------------------------------------------
 # UNet decoder preconditioning 
@@ -700,3 +722,6 @@ class PrecondUNetDecoder(torch.nn.Module, BaseAdapter):
     def init_from_pretrained(self, net: Precond):
         unet = net.unet
         self.decoder.load_state_dict(unet.state_dict(), strict=False)
+
+    def enable_gradient_checkpointing(self):
+        self.decoder.gradient_checkpoint = True

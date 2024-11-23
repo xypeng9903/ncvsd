@@ -108,6 +108,10 @@ class NCVSDLoss:
             s = precond_dec(xt, enc_x, enc_skips, t, labels, additional_x=ctrl_x, additional_skips=ctrl_skips)
 
         # 6. variational score distillation
+        precond_enc.train()
+        precond_ctrl.train()
+        precond_dec.train()
+
         loss_vsd = (weight_t / logvar_x.exp()) * (x - (s0 - s + x).detach()) ** 2 + logvar_x
 
         return loss_vsd
@@ -238,6 +242,7 @@ def training_loop(
     force_finite        = True,     # Get rid of NaN/Inf gradients before feeding them to the optimizer.
     cudnn_benchmark     = True,     # Enable torch.backends.cudnn.benchmark?
     device              = torch.device('cuda'),
+    gradient_checkpoint = False,    # Use gradient checkpointing to save memory?
 ):
     # Initialize.
     prev_status_time = time.time()
@@ -305,6 +310,12 @@ def training_loop(
     precond_dec.add_adapter('model_score', **lora_kwargs)
     precond_dec.to(device)
     print_trainable_parameters(precond_dec, 'precond_dec')
+
+    # gradient checkpointing
+    if gradient_checkpoint:
+        precond_enc.enable_gradient_checkpointing()
+        precond_ctrl.enable_gradient_checkpointing()
+        precond_dec.enable_gradient_checkpointing()
 
     # Print network summary.
     if dist.get_rank() == 0:
