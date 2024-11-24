@@ -411,7 +411,7 @@ def training_loop(
                     )
                 
                 s_enc.train(); s_dec.train(); s_ctrlnet.train()
-                loss = dsm_loss_fn(
+                dsm_loss = dsm_loss_fn(
                     s_enc=ddp_s_enc, 
                     s_dec=ddp_s_dec, 
                     s_ctrlnet=ddp_s_ctrlnet, 
@@ -421,7 +421,7 @@ def training_loop(
                     labels=labels.to(device)
                 )
 
-                loss.sum().mul(loss_scaling / batch_gpu_total).backward()
+                dsm_loss.sum().mul(loss_scaling / batch_gpu_total).backward()
 
         # Run optimizer and update weights.
         lr = dnnlib.util.call_func_by_name(cur_nimg=state.cur_nimg, batch_size=batch_size, **lr_kwargs)
@@ -454,7 +454,7 @@ def training_loop(
                 )
 
                 s_enc.eval(); s_dec.eval(); s_ctrlnet.eval()
-                loss = vsd_loss_fn(
+                vsd_loss = vsd_loss_fn(
                     net=net,
                     s_enc=ddp_s_enc,
                     s_dec=ddp_s_dec,
@@ -466,7 +466,7 @@ def training_loop(
                     labels=labels.to(device)
                 )
 
-                loss.sum().mul(loss_scaling / batch_gpu_total).backward()
+                vsd_loss.sum().mul(loss_scaling / batch_gpu_total).backward()
 
         # Run optimizer and update weights.
         lr = dnnlib.util.call_func_by_name(cur_nimg=state.cur_nimg, batch_size=batch_size, **lr_kwargs)
