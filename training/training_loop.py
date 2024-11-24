@@ -46,7 +46,7 @@ class NCVSDLoss:
             net: Precond,
             s_enc: PrecondUNetEncoder, 
             s_dec: PrecondUNetDecoder, 
-            ctrlnet: PrecondUNetEncoder, 
+            s_ctrlnet: PrecondUNetEncoder, 
             x: torch.Tensor, 
             logvar: torch.Tensor,
             y: torch.Tensor, 
@@ -67,7 +67,7 @@ class NCVSDLoss:
             s0 = net(y_eff, sigma_eff, labels)
 
             # model score
-            ctrl_x, ctrl_skips = ctrlnet(y, sigma, labels)
+            ctrl_x, ctrl_skips = s_ctrlnet(y, sigma, labels)
             enc_x, enc_skips = s_enc(xt, t, labels)
             s = s_dec(xt, enc_x, enc_skips, t, labels, additional_x=ctrl_x, additional_skips=ctrl_skips)
 
@@ -95,7 +95,7 @@ class DSMLoss:
             self, 
             s_enc: PrecondUNetEncoder, 
             s_dec: PrecondUNetDecoder, 
-            ctrlnet: PrecondUNetEncoder, 
+            s_ctrlnet: PrecondUNetEncoder, 
             x: torch.Tensor, 
             y: torch.Tensor, 
             sigma: torch.Tensor,
@@ -106,7 +106,7 @@ class DSMLoss:
         weight_t = (t ** 2 + self.sigma_data ** 2) / (t * self.sigma_data) ** 2
         xt = x + torch.randn_like(x) * t
 
-        ctrl_x, ctrl_skips = ctrlnet(y, sigma, labels)
+        ctrl_x, ctrl_skips = s_ctrlnet(y, sigma, labels)
         enc_x, enc_skips = s_enc(xt, t, labels)
         s, logvar = s_dec(xt, enc_x, enc_skips, t, labels, additional_x=ctrl_x, additional_skips=ctrl_skips, return_logvar=True)
 
@@ -126,7 +126,7 @@ class DenoisingPosteriorSampling:
             self, 
             g_enc: PrecondUNetEncoder, 
             g_dec: PrecondUNetDecoder, 
-            ctrlnet: PrecondUNetEncoder, 
+            g_ctrlnet: PrecondUNetEncoder, 
             y: torch.Tensor, 
             sigma: torch.Tensor, 
             labels: torch.Tensor = None, 
@@ -135,7 +135,7 @@ class DenoisingPosteriorSampling:
         z = torch.randn_like(y)
         sigma_hat = sigma * (1 + self.gamma)
         y_hat = y + z * (sigma_hat ** 2 - sigma ** 2) ** 0.5
-        ctrl_x, ctrl_skips = ctrlnet(y, sigma, labels)
+        ctrl_x, ctrl_skips = g_ctrlnet(y, sigma, labels)
         enc_x, enc_skips = g_enc(y_hat, sigma_hat, labels)
         out = g_dec(y_hat, enc_x, enc_skips, sigma_hat, labels, additional_x=ctrl_x, additional_skips=ctrl_skips, return_logvar=return_logvar)
         return out
@@ -224,29 +224,21 @@ def training_loop(
     # Generator.
     g_enc = PrecondUNetEncoder(**network_kwargs).init_from_pretrained(net).requires_grad_(True).to(device)
     g_dec = PrecondUNetDecoder(**network_kwargs).init_from_pretrained(net).requires_grad_(True).to(device)
+    g_ctrlnet = PrecondUNetEncoder(**network_kwargs, is_controlnet=True).init_from_pretrained(net).to(device)
     
     # Model score.
     s_enc = PrecondUNetEncoder(**network_kwargs).init_from_pretrained(net).requires_grad_(True).to(device)
     s_dec = PrecondUNetDecoder(**network_kwargs).init_from_pretrained(net).requires_grad_(True).to(device)
-    
-    # Controlnet.
-    ctrlnet = PrecondUNetEncoder(**network_kwargs, is_controlnet=True).init_from_pretrained(net)
-    for name, param in ctrlnet.named_parameters():
-        if 'controlnet' in name:
-            param.requires_grad = True
-        else:
-            param.requires_grad = False
-    ctrlnet.add_adapter('g', **lora_kwargs)
-    ctrlnet.add_adapter('s', **lora_kwargs)
-    ctrlnet.to(device)
+    s_ctrlnet = PrecondUNetEncoder(**network_kwargs, is_controlnet=True).init_from_pretrained(net).to(device)
     
     # gradient checkpointing
     if gradient_checkpoint:
         g_enc.enable_gradient_checkpointing()
         g_dec.enable_gradient_checkpointing()
+        g_ctrlnet.enable_gradient_checkpointing()
         s_enc.enable_gradient_checkpointing()
         s_dec.enable_gradient_checkpointing()
-        # ctrlnet.enable_gradient_checkpointing() # TODO: fix bug.
+        s_ctrlnet.enable_gradient_checkpointing()
 
     # Print network summary.
     if dist.get_rank() == 0:
@@ -261,15 +253,18 @@ def training_loop(
     state = dnnlib.EasyDict(cur_nimg=0, total_elapsed_time=0)
 
     # optimizer
-    params = list(g_enc.parameters()) + list(g_dec.parameters()) + list(s_enc.parameters()) + list(s_dec.parameters()) + list(ctrlnet.parameters())
-    optimizer = dnnlib.util.construct_class_by_name(params=params, **optimizer_kwargs)
+    g_params = list(g_enc.parameters()) + list(g_dec.parameters()) + list(g_ctrlnet.parameters())
+    g_optimizer = dnnlib.util.construct_class_by_name(params=g_params, **optimizer_kwargs)
+    s_params = list(s_enc.parameters()) + list(s_dec.parameters()) + list(s_ctrlnet.parameters())
+    s_optimizer = dnnlib.util.construct_class_by_name(params=s_params, **optimizer_kwargs)
     
     # ddp
     ddp_g_enc = torch.nn.parallel.DistributedDataParallel(g_enc, device_ids=[device], broadcast_buffers=False, find_unused_parameters=False)
     ddp_g_dec = torch.nn.parallel.DistributedDataParallel(g_dec, device_ids=[device], broadcast_buffers=False, find_unused_parameters=False)
+    ddp_g_ctrlnet = torch.nn.parallel.DistributedDataParallel(g_ctrlnet, device_ids=[device], broadcast_buffers=False, find_unused_parameters=False)
     ddp_s_enc = torch.nn.parallel.DistributedDataParallel(s_enc, device_ids=[device], broadcast_buffers=False, find_unused_parameters=False)
     ddp_s_dec = torch.nn.parallel.DistributedDataParallel(s_dec, device_ids=[device], broadcast_buffers=False, find_unused_parameters=False)
-    ddp_ctrlnet = torch.nn.parallel.DistributedDataParallel(ctrlnet, device_ids=[device], broadcast_buffers=False, find_unused_parameters=False)
+    ddp_s_ctrlnet = torch.nn.parallel.DistributedDataParallel(s_ctrlnet, device_ids=[device], broadcast_buffers=False, find_unused_parameters=False)
 
     # denoising posterior sampling function
     sample_fn = dnnlib.util.construct_class_by_name(**sampling_kwargs)
@@ -279,20 +274,22 @@ def training_loop(
     # ema
     ema_g_enc = dnnlib.util.construct_class_by_name(net=g_enc, **ema_kwargs) if ema_kwargs is not None else None
     ema_g_dec = dnnlib.util.construct_class_by_name(net=g_dec, **ema_kwargs) if ema_kwargs is not None else None
-    ema_ctrlnet = dnnlib.util.construct_class_by_name(net=ctrlnet, **ema_kwargs) if ema_kwargs is not None else None
+    ema_g_ctrlnet = dnnlib.util.construct_class_by_name(net=s_ctrlnet, **ema_kwargs) if ema_kwargs is not None else None
 
     # Load previous checkpoint and decide how long to train.
     checkpoint = dist.CheckpointIO(
         state=state, 
         g_enc=g_enc,
         g_dec=g_dec,
+        g_ctrlnet=g_ctrlnet,
         s_enc=s_enc,
         s_dec=s_dec,
-        ctrlnet=ctrlnet,
-        optimizer=optimizer,
+        s_ctrlnet=s_ctrlnet,
+        g_optimizer=g_optimizer,
+        s_optimizer=s_optimizer,
         ema_g_enc=ema_g_enc, 
         ema_g_dec=ema_g_dec,
-        ema_ctrlnet=ema_ctrlnet
+        ema_g_ctrlnet=ema_g_ctrlnet
     )
     checkpoint.load_latest(run_dir)
     stop_at_nimg = total_nimg
@@ -358,7 +355,7 @@ def training_loop(
 
         # Save network snapshot.
         if snapshot_nimg is not None and state.cur_nimg % snapshot_nimg == 0 and (state.cur_nimg != start_nimg or start_nimg == 0) and dist.get_rank() == 0:
-            for ema, name in zip([ema_g_enc, ema_g_dec, ema_ctrlnet], ['g_enc', 'g_dec', 'ctrlnet']):
+            for ema, name in zip([ema_g_enc, ema_g_dec, ema_g_ctrlnet], ['g_enc', 'g_dec', 'g_ctrlnet']):
                 ema_list = ema.get()
                 ema_list = ema_list if isinstance(ema_list, list) else [(ema_list, '')]
                 for ema_net, ema_suffix in ema_list:
@@ -383,13 +380,16 @@ def training_loop(
         batch_start_time = time.time()
         misc.set_random_seed(seed, dist.get_rank(), state.cur_nimg)
 
-        optimizer.zero_grad(set_to_none=True)
+        #------------------------------------------
+        # Denoising score matching.
+
+        s_optimizer.zero_grad(set_to_none=True)
         for round_idx in range(num_accumulation_rounds):
             with misc.ddp_sync(ddp_g_enc, (round_idx == num_accumulation_rounds - 1)), \
                  misc.ddp_sync(ddp_g_dec, (round_idx == num_accumulation_rounds - 1)), \
                  misc.ddp_sync(ddp_s_enc, (round_idx == num_accumulation_rounds - 1)), \
                  misc.ddp_sync(ddp_s_dec, (round_idx == num_accumulation_rounds - 1)), \
-                 misc.ddp_sync(ddp_ctrlnet, (round_idx == num_accumulation_rounds - 1)):
+                 misc.ddp_sync(ddp_s_ctrlnet, (round_idx == num_accumulation_rounds - 1)):
                 
                 # Sample condition y.
                 images, labels = next(dataset_iterator)
@@ -400,45 +400,65 @@ def training_loop(
 
                 # Denoising score matching.
                 with torch.no_grad():
-                    g_enc.eval(); g_dec.eval(); ctrlnet.set_adapter('g'); ctrlnet.eval()
+                    g_enc.eval(); g_dec.eval(); s_ctrlnet.eval()
                     x = sample_fn(
                         g_enc=ddp_g_enc,
                         g_dec=ddp_g_dec,
-                        ctrlnet=ddp_ctrlnet,
+                        g_ctrlnet=ddp_g_ctrlnet,
                         y=y, 
                         sigma=sigma, 
                         labels=labels
                     )
                 
-                s_enc.train(); s_dec.train(); ctrlnet.set_adapter('s'); ctrlnet.train()
-                dsm_loss = dsm_loss_fn(
+                s_enc.train(); s_dec.train(); s_ctrlnet.train()
+                loss = dsm_loss_fn(
                     s_enc=ddp_s_enc, 
                     s_dec=ddp_s_dec, 
-                    ctrlnet=ddp_ctrlnet, 
+                    s_ctrlnet=ddp_s_ctrlnet, 
                     x=x,
                     y=y, 
                     sigma=sigma,
                     labels=labels.to(device)
                 )
 
-                # variational score distillation.
-                g_enc.train(); g_dec.train(); ctrlnet.set_adapter('g'); ctrlnet.train()
+                loss.sum().mul(loss_scaling / batch_gpu_total).backward()
+
+        # Run optimizer and update weights.
+        lr = dnnlib.util.call_func_by_name(cur_nimg=state.cur_nimg, batch_size=batch_size, **lr_kwargs)
+        for g in s_optimizer.param_groups:
+            g['lr'] = lr
+            for param in g['params']:
+                if param.grad is not None and force_finite:
+                    torch.nan_to_num(param.grad, nan=0, posinf=0, neginf=0, out=param.grad)     
+        
+        s_optimizer.step()
+
+        #------------------------------------------
+        # variational score distillation.
+
+        g_optimizer.zero_grad(set_to_none=True)
+        for round_idx in range(num_accumulation_rounds):
+            with misc.ddp_sync(ddp_g_enc, (round_idx == num_accumulation_rounds - 1)), \
+                 misc.ddp_sync(ddp_g_dec, (round_idx == num_accumulation_rounds - 1)), \
+                 misc.ddp_sync(ddp_s_ctrlnet, (round_idx == num_accumulation_rounds - 1)):
+                
+                g_enc.train(); g_dec.train(); s_ctrlnet.train()
                 x, logvar = sample_fn(
                     g_enc=ddp_g_enc,
                     g_dec=ddp_g_dec,
-                    ctrlnet=ddp_ctrlnet,
+                    g_ctrlnet=ddp_s_ctrlnet,
                     y=y, 
                     sigma=sigma, 
                     labels=labels,
                     return_logvar=True
                 )
 
-                s_enc.eval(); s_dec.eval(); ctrlnet.set_adapter('s'); ctrlnet.eval()
-                vsd_loss = vsd_loss_fn(
+                s_enc.eval(); s_dec.eval(); s_ctrlnet.eval()
+                loss = vsd_loss_fn(
                     net=net,
                     s_enc=ddp_s_enc,
                     s_dec=ddp_s_dec,
-                    ctrlnet=ddp_ctrlnet, 
+                    s_ctrlnet=ddp_s_ctrlnet, 
                     x=x,
                     logvar=logvar,
                     y=y,
@@ -446,22 +466,21 @@ def training_loop(
                     labels=labels.to(device)
                 )
 
-                loss = vsd_loss + dsm_loss
                 loss.sum().mul(loss_scaling / batch_gpu_total).backward()
 
         # Run optimizer and update weights.
         lr = dnnlib.util.call_func_by_name(cur_nimg=state.cur_nimg, batch_size=batch_size, **lr_kwargs)
-        for g in optimizer.param_groups:
+        for g in g_optimizer.param_groups:
             g['lr'] = lr
             for param in g['params']:
                 if param.grad is not None and force_finite:
                     torch.nan_to_num(param.grad, nan=0, posinf=0, neginf=0, out=param.grad)     
         
-        optimizer.step()
+        g_optimizer.step()
                   
         # Update EMA and training state.
         state.cur_nimg += batch_size
-        for ema in [ema_g_enc, ema_ctrlnet, ema_g_dec]:
+        for ema in [ema_g_enc, ema_g_ctrlnet, ema_g_dec]:
             ema.update(cur_nimg=state.cur_nimg, batch_size=batch_size)
         cumulative_training_time += time.time() - batch_start_time
         
