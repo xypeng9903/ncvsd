@@ -377,10 +377,11 @@ def training_loop(
         batch_start_time = time.time()
         misc.set_random_seed(seed, dist.get_rank(), state.cur_nimg)
 
-        # Denoising score matching
         optimizer.zero_grad(set_to_none=True)
         for round_idx in range(num_accumulation_rounds):
-            with misc.ddp_sync(ddp_s_enc, (round_idx == num_accumulation_rounds - 1)), \
+            with misc.ddp_sync(ddp_g_enc, (round_idx == num_accumulation_rounds - 1)), \
+                 misc.ddp_sync(ddp_g_dec, (round_idx == num_accumulation_rounds - 1)), \
+                 misc.ddp_sync(ddp_s_enc, (round_idx == num_accumulation_rounds - 1)), \
                  misc.ddp_sync(ddp_s_dec, (round_idx == num_accumulation_rounds - 1)), \
                  misc.ddp_sync(ddp_ctrlnet, (round_idx == num_accumulation_rounds - 1)):
                 
