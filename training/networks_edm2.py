@@ -579,7 +579,7 @@ class UNetDecoder(torch.nn.Module):
         for name, block in self.dec.items():
             if 'block' in name:
                 x = mp_cat(x, skips.pop(), t=self.concat_balance)
-                x = block(x, emb) if not self.gradient_checkpoint else checkpoint(block, x, emb)
+            x = block(x, emb) if not self.gradient_checkpoint else checkpoint(block, x, emb)
         x = self.out_conv(x, gain=self.out_gain)
         return x
     
