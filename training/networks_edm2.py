@@ -479,7 +479,7 @@ class UNetEncoder(torch.nn.Module):
                     x = checkpoint(block, x) if self.emb_conditioning is None \
                         else checkpoint(block, x) + checkpoint(self.emb_conditioning, condition_labels)
                 else: 
-                    x = block(x, emb)
+                    x = checkpoint(block, x, emb)
                 if self.controlnet_conv is not None:
                     skips.append(checkpoint(self.controlnet_conv[name], x))
                 else:
