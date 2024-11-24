@@ -7,16 +7,12 @@
         "label_dim": 1000
     },
     "vsd_loss_kwargs": {
-        "P_mean_sigma": 0.4, 
-        "P_std_sigma": 2.0,
-        "P_mean_t": -0.8, 
-        "P_std_t": 1.6
+        "P_mean": -0.8, 
+        "P_std": 1.6
     },
     "dsm_loss_kwargs": {
-        "P_mean_sigma": 0.4, 
-        "P_std_sigma": 2.0,
-        "P_mean_t": 0.4, 
-        "P_std_t": 2.0
+        "P_mean": 0.4, 
+        "P_std": 2.0
     },
     "lr_kwargs": {
         "ref_lr": 0.0001,

@@ -429,7 +429,6 @@ class UNetEncoder(torch.nn.Module):
         cemb = model_channels * channel_mult_emb if channel_mult_emb is not None else max(cblock)
         self.label_balance = label_balance
         self.concat_balance = concat_balance
-        self.out_gain = torch.nn.Parameter(torch.zeros([]))
         self.is_controlnet = is_controlnet
         self.gradient_checkpoint = gradient_checkpoint
 
@@ -669,6 +668,7 @@ class PrecondUNetEncoder(torch.nn.Module, BaseAdapter):
     def init_from_pretrained(self, net: Precond):
         unet = net.unet
         self.encoder.load_state_dict(unet.state_dict(), strict=False)
+        return self
 
     def enable_gradient_checkpointing(self):
         self.encoder.gradient_checkpoint = True
@@ -722,6 +722,7 @@ class PrecondUNetDecoder(torch.nn.Module, BaseAdapter):
     def init_from_pretrained(self, net: Precond):
         unet = net.unet
         self.decoder.load_state_dict(unet.state_dict(), strict=False)
+        return self
 
     def enable_gradient_checkpointing(self):
         self.decoder.gradient_checkpoint = True

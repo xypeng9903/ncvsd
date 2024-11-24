@@ -54,7 +54,6 @@ def setup_training_config(preset: str, **opts):
     c.vsd_loss_kwargs = dnnlib.EasyDict(class_name='training.training_loop.NCVSDLoss', **preset['vsd_loss_kwargs'])
     c.dsm_loss_kwargs = dnnlib.EasyDict(class_name='training.training_loop.DSMLoss', **preset['dsm_loss_kwargs'])
     c.lr_kwargs = dnnlib.EasyDict(func_name='training.training_loop.learning_rate_schedule', **preset['lr_kwargs'])
-    c.vsd_warmup_kwargs = dnnlib.EasyDict(func_name='training.training_loop.learning_rate_schedule', **preset['vsd_warmup_kwargs'])
 
     # Performance-related options.
     c.batch_gpu = opts.get('batch_gpu', 0) or None
