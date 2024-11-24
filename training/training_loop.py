@@ -47,9 +47,9 @@ class NCVSDLoss:
 
     def __call__(
             self, 
-            precond_enc: PrecondUNetEncoder, 
-            precond_ctrl: PrecondUNetEncoder, 
-            precond_dec: PrecondUNetDecoder, 
+            precond_enc: torch.nn.parallel.DistributedDataParallel, 
+            precond_ctrl: torch.nn.parallel.DistributedDataParallel, 
+            precond_dec: torch.nn.parallel.DistributedDataParallel, 
             images: torch.Tensor, 
             labels: torch.Tensor = None
     ):
@@ -59,9 +59,9 @@ class NCVSDLoss:
         y = images + torch.randn_like(images) * sigma
         
         # 2. denoising posterior sampling x ~ \mu(x|y)
-        precond_enc.set_adapter('generative_denoiser')
-        precond_ctrl.set_adapter('generative_denoiser')
-        precond_dec.set_adapter('generative_denoiser')
+        precond_enc.module.set_adapter('generative_denoiser')
+        precond_ctrl.module.set_adapter('generative_denoiser')
+        precond_dec.module.set_adapter('generative_denoiser')
 
         precond_enc.train()
         precond_ctrl.train()
@@ -91,17 +91,17 @@ class NCVSDLoss:
             precond_dec.eval()
             
             # data score
-            precond_enc.disable_adapters()
-            precond_ctrl.disable_adapters()
-            precond_dec.disable_adapters()
+            precond_enc.module.disable_adapters()
+            precond_ctrl.module.disable_adapters()
+            precond_dec.module.disable_adapters()
 
             enc_x, enc_skips = precond_enc(y_eff, sigma_eff, labels)
             s0 = precond_dec(y_eff, enc_x, enc_skips, sigma_eff, labels)
 
             # model score
-            precond_enc.set_adapter('model_score')
-            precond_ctrl.set_adapter('model_score')
-            precond_dec.set_adapter('model_score')
+            precond_enc.module.set_adapter('model_score')
+            precond_ctrl.module.set_adapter('model_score')
+            precond_dec.module.set_adapter('model_score')
 
             enc_x, enc_skips = precond_enc(xt, t, labels)
             ctrl_x, ctrl_skips = precond_ctrl(y, sigma, labels, condition_labels=xt)
@@ -135,9 +135,9 @@ class DSMLoss:
 
     def __call__(
             self, 
-            precond_enc: PrecondUNetEncoder, 
-            precond_ctrl: PrecondUNetEncoder, 
-            precond_dec: PrecondUNetDecoder, 
+            precond_enc: torch.nn.parallel.DistributedDataParallel, 
+            precond_ctrl: torch.nn.parallel.DistributedDataParallel, 
+            precond_dec: torch.nn.parallel.DistributedDataParallel, 
             images: torch.Tensor, 
             labels: torch.Tensor = None
     ):
@@ -148,9 +148,9 @@ class DSMLoss:
         
         # 2. denoising posterior sampling x ~ \mu(x|y)
         with torch.no_grad():
-            precond_enc.set_adapter('generative_denoiser')
-            precond_ctrl.set_adapter('generative_denoiser')
-            precond_dec.set_adapter('generative_denoiser')
+            precond_enc.module.set_adapter('generative_denoiser')
+            precond_ctrl.module.set_adapter('generative_denoiser')
+            precond_dec.module.set_adapter('generative_denoiser')
 
             precond_enc.eval()
             precond_ctrl.eval()
@@ -170,9 +170,9 @@ class DSMLoss:
         xt = x + torch.randn_like(x) * t
 
         # 5. denoising score matching
-        precond_enc.set_adapter('model_score')
-        precond_ctrl.set_adapter('model_score')
-        precond_dec.set_adapter('model_score')
+        precond_enc.module.set_adapter('model_score')
+        precond_ctrl.module.set_adapter('model_score')
+        precond_dec.module.set_adapter('model_score')
 
         precond_enc.train()
         precond_ctrl.train()
@@ -369,6 +369,7 @@ def training_loop(
     stats_jsonl = None
     gc.collect()
     torch.cuda.empty_cache()
+    start_time = time.time()
     while True:
         done = (state.cur_nimg >= stop_at_nimg)
 
@@ -441,22 +442,22 @@ def training_loop(
         optimizer.zero_grad(set_to_none=True)
         for round_idx in range(num_accumulation_rounds):
             with misc.ddp_sync(ddp_enc, (round_idx == num_accumulation_rounds - 1)), \
-                misc.ddp_sync(ddp_ctrl, (round_idx == num_accumulation_rounds - 1)), \
-                misc.ddp_sync(ddp_dec, (round_idx == num_accumulation_rounds - 1)):
+                 misc.ddp_sync(ddp_ctrl, (round_idx == num_accumulation_rounds - 1)), \
+                 misc.ddp_sync(ddp_dec, (round_idx == num_accumulation_rounds - 1)):
                 
                 images, labels = next(dataset_iterator)
                 images = encoder.encode_latents(images.to(device))
                 vsd_loss = vsd_loss_fn(
-                    precond_enc=ddp_enc.module, 
-                    precond_ctrl=ddp_ctrl.module, 
-                    precond_dec=ddp_dec.module, 
+                    precond_enc=ddp_enc, 
+                    precond_ctrl=ddp_ctrl, 
+                    precond_dec=ddp_dec, 
                     images=images, 
                     labels=labels.to(device)
                 )
                 dsm_loss = dsm_loss_fn(
-                    precond_enc=ddp_enc.module, 
-                    precond_ctrl=ddp_ctrl.module, 
-                    precond_dec=ddp_dec.module, 
+                    precond_enc=ddp_enc, 
+                    precond_ctrl=ddp_ctrl, 
+                    precond_dec=ddp_dec, 
                     images=images, 
                     labels=labels.to(device)
                 )
@@ -483,7 +484,7 @@ def training_loop(
         
         # print progress
         progress = state.cur_nimg / total_nimg
-        estimated_time = (time.time() - prev_status_time) / progress * (1 - progress)
+        estimated_time = (time.time() - start_time) / progress * (1 - progress)
         dist.print0(
             f'\rProgress: [{int(progress * 50) * "="}{(50 - int(progress * 50)) * " "}] {state.cur_nimg} / {total_nimg} ({progress * 100:.2f})%',
             f'| estimated_time: {dnnlib.util.format_time(estimated_time)} | vsd_loss: {vsd_loss.mean().item():.4f} | dsm_loss: {dsm_loss.mean().item():.4f} | vsd_warmup_ratio: {r:.8f} | lr: {lr:.8f}', 
