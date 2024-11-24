@@ -385,9 +385,7 @@ def training_loop(
 
         s_optimizer.zero_grad(set_to_none=True)
         for round_idx in range(num_accumulation_rounds):
-            with misc.ddp_sync(ddp_g_enc, (round_idx == num_accumulation_rounds - 1)), \
-                 misc.ddp_sync(ddp_g_dec, (round_idx == num_accumulation_rounds - 1)), \
-                 misc.ddp_sync(ddp_s_enc, (round_idx == num_accumulation_rounds - 1)), \
+            with misc.ddp_sync(ddp_s_enc, (round_idx == num_accumulation_rounds - 1)), \
                  misc.ddp_sync(ddp_s_dec, (round_idx == num_accumulation_rounds - 1)), \
                  misc.ddp_sync(ddp_s_ctrlnet, (round_idx == num_accumulation_rounds - 1)):
                 
@@ -440,7 +438,7 @@ def training_loop(
         for round_idx in range(num_accumulation_rounds):
             with misc.ddp_sync(ddp_g_enc, (round_idx == num_accumulation_rounds - 1)), \
                  misc.ddp_sync(ddp_g_dec, (round_idx == num_accumulation_rounds - 1)), \
-                 misc.ddp_sync(ddp_s_ctrlnet, (round_idx == num_accumulation_rounds - 1)):
+                 misc.ddp_sync(ddp_g_ctrlnet, (round_idx == num_accumulation_rounds - 1)):
                 
                 g_enc.train(); g_dec.train(); s_ctrlnet.train()
                 x, logvar = sample_fn(
