@@ -313,6 +313,7 @@ def training_loop(
     stats_jsonl = None
     gc.collect()
     torch.cuda.empty_cache()
+    start_time = time.time()
     while True:
         done = (state.cur_nimg >= stop_at_nimg)
 
@@ -466,7 +467,7 @@ def training_loop(
         
         # print progress
         progress = state.cur_nimg / total_nimg
-        estimated_time = (time.time() - prev_status_time) / progress * (1 - progress)
+        estimated_time = (time.time() - start_time) / progress * (1 - progress)
         dist.print0(
             f'\rProgress: [{int(progress * 50) * "="}{(50 - int(progress * 50)) * " "}] {state.cur_nimg} / {total_nimg} ({progress * 100:.2f})%',
             f'| estimated_time: {dnnlib.util.format_time(estimated_time)} | vsd_loss: {vsd_loss.mean().item():.4f} | dsm_loss: {dsm_loss.mean().item():.4f}', 
