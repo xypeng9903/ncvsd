@@ -474,26 +474,16 @@ class UNetEncoder(torch.nn.Module):
         x = torch.cat([x, torch.ones_like(x[:, :1])], dim=1)
         skips = []
         for name, block in self.enc.items():
-            if self.gradient_checkpoint:
-                if 'conv' in name:
-                    x = checkpoint(block, x) if self.emb_conditioning is None \
-                        else checkpoint(block, x) + checkpoint(self.emb_conditioning, condition_labels)
-                else: 
-                    x = checkpoint(block, x, emb)
-                if self.controlnet_conv is not None:
-                    skips.append(checkpoint(self.controlnet_conv[name], x))
-                else:
-                    skips.append(x)
+            if 'conv' in name:
+                x = block(x) if self.emb_conditioning is None \
+                             else block(x) + self.emb_conditioning(condition_labels)
+            else: 
+                x = block(x, emb) if not self.gradient_checkpoint \
+                                  else checkpoint(block, x, emb, use_reentrant=True)
+            if self.controlnet_conv is not None:
+                skips.append(self.controlnet_conv[name](x))
             else:
-                if 'conv' in name:
-                    x = block(x) if self.emb_conditioning is None \
-                        else block(x) + self.emb_conditioning(condition_labels)
-                else: 
-                    x = block(x, emb)
-                if self.controlnet_conv is not None:
-                    skips.append(self.controlnet_conv[name](x))
-                else:
-                    skips.append(x)
+                skips.append(x)
         return x, skips
     
 
@@ -579,7 +569,8 @@ class UNetDecoder(torch.nn.Module):
         for name, block in self.dec.items():
             if 'block' in name:
                 x = mp_cat(x, skips.pop(), t=self.concat_balance)
-            x = block(x, emb) if not self.gradient_checkpoint else checkpoint(block, x, emb)
+            x = block(x, emb) if not self.gradient_checkpoint \
+                              else checkpoint(block, x, emb, use_reentrant=True)
         x = self.out_conv(x, gain=self.out_gain)
         return x
     

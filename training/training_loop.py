@@ -230,7 +230,12 @@ def training_loop(
     s_dec = PrecondUNetDecoder(**network_kwargs).init_from_pretrained(net).requires_grad_(True).to(device)
     
     # Controlnet.
-    ctrlnet = PrecondUNetEncoder(**network_kwargs, is_controlnet=True).init_from_pretrained(net).requires_grad_(False)
+    ctrlnet = PrecondUNetEncoder(**network_kwargs, is_controlnet=True).init_from_pretrained(net)
+    for name, param in ctrlnet.named_parameters():
+        if 'controlnet' in name:
+            param.requires_grad = True
+        else:
+            param.requires_grad = False
     ctrlnet.add_adapter('g', **lora_kwargs)
     ctrlnet.add_adapter('s', **lora_kwargs)
     ctrlnet.to(device)
@@ -241,7 +246,7 @@ def training_loop(
         g_dec.enable_gradient_checkpointing()
         s_enc.enable_gradient_checkpointing()
         s_dec.enable_gradient_checkpointing()
-        ctrlnet.enable_gradient_checkpointing()
+        # ctrlnet.enable_gradient_checkpointing() # TODO: fix bug.
 
     # Print network summary.
     if dist.get_rank() == 0:
