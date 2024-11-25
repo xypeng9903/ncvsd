@@ -191,6 +191,7 @@ def training_loop(
         generator.enable_gradient_checkpointing()
         score_model.enable_gradient_checkpointing()
     generator = GenerativeDenoiser(generator, gamma=gamma, init_sigma=init_sigma)
+    ema_generator = dnnlib.util.construct_class_by_name(net=generator, **ema_kwargs) if ema_kwargs is not None else None
     
     # Print network summary.
     if dist.get_rank() == 0:
@@ -212,13 +213,10 @@ def training_loop(
     ddp_generator = torch.nn.parallel.DistributedDataParallel(generator, device_ids=[device], broadcast_buffers=False, find_unused_parameters=False)
     ddp_score_model = torch.nn.parallel.DistributedDataParallel(score_model, device_ids=[device], broadcast_buffers=False, find_unused_parameters=False)
 
-    # denoising posterior sampling function
+    # loss functions
     vsd_loss_fn = dnnlib.util.construct_class_by_name(**vsd_loss_kwargs)
     dsm_loss_fn = dnnlib.util.construct_class_by_name(**dsm_loss_kwargs)
     
-    # ema
-    ema_generator = dnnlib.util.construct_class_by_name(net=generator, **ema_kwargs) if ema_kwargs is not None else None
-
     # Load previous checkpoint and decide how long to train.
     checkpoint = dist.CheckpointIO(
         state=state, 
