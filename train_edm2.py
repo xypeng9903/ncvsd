@@ -49,18 +49,24 @@ def setup_training_config(preset: str, **opts):
         raise click.ClickException(f'--data: Unsupported channel count {dataset_channels}')
 
     # Hyperparameters.
-    c.update(total_nimg=opts.duration, batch_size=opts.batch, net=opts.net)
+    c.update(
+        total_nimg=opts.duration, 
+        batch_size=opts.batch, 
+        net=opts.net,
+        P_mean_sigma=preset['P_mean_sigma'],
+        P_std_sigma=preset['P_std_sigma'],
+    )
     c.network_kwargs = dnnlib.EasyDict(**preset['network_kwargs'])
     c.vsd_loss_kwargs = dnnlib.EasyDict(class_name='training.training_loop.NCVSDLoss', **preset['vsd_loss_kwargs'])
     c.dsm_loss_kwargs = dnnlib.EasyDict(class_name='training.training_loop.DSMLoss', **preset['dsm_loss_kwargs'])
     c.lr_kwargs = dnnlib.EasyDict(func_name='training.training_loop.learning_rate_schedule', **preset['lr_kwargs'])
-    c.vsd_warmup_kwargs = dnnlib.EasyDict(func_name='training.training_loop.learning_rate_schedule', **preset['vsd_warmup_kwargs'])
 
     # Performance-related options.
     c.batch_gpu = opts.get('batch_gpu', 0) or None
     c.network_kwargs.use_fp16 = opts.get('fp16', True)
     c.loss_scaling = opts.get('ls', 1)
     c.cudnn_benchmark = opts.get('bench', True)
+    c.gradient_checkpoint = opts.get('grad_checkpoint', False)
 
     # I/O-related options.
     c.status_nimg = opts.get('status', 0) or None
@@ -143,6 +149,7 @@ def parse_nimg(s):
 @click.option('--fp16',             help='Enable mixed-precision training', metavar='BOOL',     type=bool, default=True, show_default=True)
 @click.option('--ls',               help='Loss scaling', metavar='FLOAT',                       type=click.FloatRange(min=0, min_open=True), default=1, show_default=True)
 @click.option('--bench',            help='Enable cuDNN benchmarking', metavar='BOOL',           type=bool, default=True, show_default=True)
+@click.option('--grad-checkpoint',  help='Enable gradient checkpointing', metavar='BOOL',       type=bool, default=False, show_default=True)
 
 # I/O-related options.
 @click.option('--status',           help='Interval of status prints', metavar='NIMG',           type=parse_nimg, default='128Ki', show_default=True)
