@@ -19,8 +19,5 @@
     "lr_kwargs": {
         "ref_lr": 0.0001,
         "ref_batches": 35000
-    },
-    "vsd_warmup_kwargs": {
-        "ref_batches": 10000
     }
 }
