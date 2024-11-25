@@ -23,6 +23,7 @@ import gc
 
 from .networks_edm2 import PrecondCondition, GenerativeDenoiser
 from metrics import di_metric_main as metric_main
+from torchvision.utils import save_image
 
 
 #----------------------------------------------------------------------------
@@ -52,14 +53,14 @@ class NCVSDLoss:
             sigma: torch.Tensor,
             labels: torch.Tensor = None
     ):        
-        # diffuse
-        rnd_normal_t = torch.randn([y.shape[0], 1, 1, 1], device=y.device)
-        t = (rnd_normal_t * self.P_std + self.P_mean).exp()
-        weight_t = (t ** 2 + self.sigma_data ** 2) / (t * self.sigma_data) ** 2
-        xt = x + torch.randn_like(x) * t
-
-        # score prediction
         with torch.no_grad():   
+            # diffuse
+            rnd_normal_t = torch.randn([y.shape[0], 1, 1, 1], device=y.device)
+            t = (rnd_normal_t * self.P_std + self.P_mean).exp()
+            weight_t = (t ** 2 + self.sigma_data ** 2) / (t * self.sigma_data) ** 2
+            xt = x + torch.randn_like(x) * t
+
+            # score prediction
             sigma_eff = 1 / (1 / sigma ** 2 + 1 / t ** 2) ** 0.5
             y_eff = (y / sigma ** 2 + xt / t ** 2) * sigma_eff ** 2
             s0 = net(y_eff, sigma_eff, labels)
@@ -178,25 +179,19 @@ def training_loop(
     dist.print0('Setting up encoder...')
     encoder = dnnlib.util.construct_class_by_name(**encoder_kwargs)
     
+    # Setup networks.
     dist.print0('Constructing networks...')
-    # Teacher model.
-    dist.print0(f'Load teacher model: {net}')
     with dnnlib.util.open_url(net, verbose=True) as f:
         data = pickle.load(f)
+        dist.print0(f'Load teacher model: {net}')
     net = data['ema'].eval().requires_grad_(False).to(device)
-    
-    # Generator.
-    generator = PrecondCondition(**network_kwargs).init_from_pretrained(net).requires_grad_(True)
-    generator = GenerativeDenoiser(generator, gamma=gamma, init_sigma=init_sigma).to(device)
-    
-    # Model score.
+    generator = PrecondCondition(**network_kwargs).init_from_pretrained(net).requires_grad_(True).to(device)
     score_model = PrecondCondition(**network_kwargs).init_from_pretrained(net).requires_grad_(True).to(device)
+    if gradient_checkpoint:
+        generator.enable_gradient_checkpointing()
+        score_model.enable_gradient_checkpointing()
+    generator = GenerativeDenoiser(generator, gamma=gamma, init_sigma=init_sigma)
     
-    # TODO: gradient checkpointing
-    # if gradient_checkpoint:
-    #     generator.enable_gradient_checkpointing()
-    #     score_model.enable_gradient_checkpointing()
-
     # Print network summary.
     if dist.get_rank() == 0:
         misc.print_module_summary(net, [
@@ -311,20 +306,28 @@ def training_loop(
                     pickle.dump(data, f)
                 dist.print0('done')
                 del data # conserve memory
-
-                # dist.print0(f'Evaluating metrics for {fname}')
-                # for metric in metrics:
-                #     ema_net.set_timesteps(num_inference_steps)
-                #     result_dict = metric_main.calc_metric(metric=metric, G=ema_net, init_sigma=init_sigma,
-                #         dataset_kwargs=dataset_kwargs, num_gpus=dist.get_world_size(), rank=dist.get_rank(), device=device)
-                #     if dist.get_rank() == 0:
-                #         metric_main.report_metric(result_dict, run_dir=run_dir, snapshot_pkl=f'fakes{state.cur_nimg//1000:06d}.png')                        
+                    
+                with torch.no_grad():
+                    ema_net.set_timesteps(num_inference_steps)
+                    
+                    dist.print0(f'Exporting sample images for {fname}')
+                    if dist.get_rank() == 0:
+                        c = torch.eye(64, ema_net.label_dim, device=device)
+                        sigma = init_sigma * torch.ones(64, 1, 1, 1, device=device)
+                        z = torch.randn(64, 3, 64, 64, device=device)
+                        images = ema_net(z, sigma, c)
+                        grid_size = (8, 8)
+                        images = images.cpu()
+                        save_image(images, os.path.join(run_dir, f'{fname}.png'), nrow=grid_size[0], normalize=True, value_range=(-1, 1))
+                        del images
+                    
+                    dist.print0(f'Evaluating metrics for {fname}')
+                    for metric in metrics:
+                        result_dict = metric_main.calc_metric(metric=metric, G=ema_net, init_sigma=init_sigma,
+                            dataset_kwargs=dataset_kwargs, num_gpus=dist.get_world_size(), rank=dist.get_rank(), device=device)
+                        if dist.get_rank() == 0:
+                            metric_main.report_metric(result_dict, run_dir=run_dir, snapshot_pkl=f'fakes{state.cur_nimg//1000:06d}.png')                        
             
-            # TODO: dist.print0('Exporting sample images...')
-            # if dist.get_rank() == 0:
-            #     images = torch.cat([G_ema(z, init_sigma*torch.ones(z.shape[0],1,1,1).to(z.device).to(z.dtype), c, augment_labels=torch.zeros(z.shape[0], 9).to(z.device).to(z.dtype)).cpu() for z, c in zip(grid_z, grid_c)]).numpy()
-            #     save_image_grid(img=images, fname=os.path.join(run_dir, f'fakes_{alpha:03f}_{cur_nimg//1000:06d}.png'), drange=[-1,1], grid_size=grid_size)
-            #     del images
 
         # Save state checkpoint.
         if checkpoint_nimg is not None and (done or state.cur_nimg % checkpoint_nimg == 0) and state.cur_nimg != start_nimg:

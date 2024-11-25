@@ -784,6 +784,11 @@ class PrecondCondition(torch.nn.Module):
         self.dec.load_state_dict(unet.state_dict(), strict=False)
         self.ctrl.load_state_dict(unet.state_dict(), strict=False)
         return self
+    
+    def enable_gradient_checkpointing(self):
+        self.enc.gradient_checkpoint = True
+        self.dec.gradient_checkpoint = True
+        self.ctrl.gradient_checkpoint = True
 
 
 #----------------------------------------------------------------------------
@@ -802,6 +807,7 @@ class GenerativeDenoiser(torch.nn.Module):
         self.model = model
         self.img_resolution = model.img_resolution
         self.img_channels = model.img_channels
+        self.label_dim = model.label_dim
         self.init_sigma = init_sigma
         self.gamma = gamma
         self.num_inference_steps = num_inference_steps
