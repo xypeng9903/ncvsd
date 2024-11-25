@@ -308,8 +308,8 @@ def training_loop(
                 del data # conserve memory
                     
                 with torch.no_grad():
+                    ema_net.eval()
                     ema_net.set_timesteps(num_inference_steps)
-                    
                     dist.print0(f'Exporting sample images for {fname}')
                     if dist.get_rank() == 0:
                         c = torch.eye(64, ema_net.label_dim, device=device)
@@ -320,14 +320,12 @@ def training_loop(
                         images = images.cpu()
                         save_image(images, os.path.join(run_dir, f'{fname}.png'), nrow=grid_size[0], normalize=True, value_range=(-1, 1))
                         del images
-                    
                     dist.print0(f'Evaluating metrics for {fname}')
                     for metric in metrics:
                         result_dict = metric_main.calc_metric(metric=metric, G=ema_net, init_sigma=init_sigma,
                             dataset_kwargs=dataset_kwargs, num_gpus=dist.get_world_size(), rank=dist.get_rank(), device=device)
                         if dist.get_rank() == 0:
-                            metric_main.report_metric(result_dict, run_dir=run_dir, snapshot_pkl=f'fakes{state.cur_nimg//1000:06d}.png')                        
-            
+                            metric_main.report_metric(result_dict, run_dir=run_dir, snapshot_pkl=f'{fname}.png')                        
 
         # Save state checkpoint.
         if checkpoint_nimg is not None and (done or state.cur_nimg % checkpoint_nimg == 0) and state.cur_nimg != start_nimg:
@@ -422,8 +420,9 @@ def training_loop(
         #------------------------------------------------------------------------------------
         # print progress
 
+        batch_time = time.time() - batch_start_time
         progress = state.cur_nimg / total_nimg
-        estimated_time = (time.time() - start_time) / progress * (1 - progress)
+        estimated_time = total_nimg * (1 - progress) / batch_size * batch_time
         dist.print0(
             f'\rProgress: [{int(progress * 50) * "="}{(50 - int(progress * 50)) * " "}] {state.cur_nimg} / {total_nimg} ({progress * 100:.2f})%',
             f'| estimated_time: {dnnlib.util.format_time(estimated_time)} | vsd_loss: {vsd_loss.mean().item():.4f} | dsm_loss: {dsm_loss.mean().item():.4f}', 
