@@ -14,6 +14,7 @@ from torch_utils import persistence
 from torch_utils import misc
 from torch import nn
 from torch.utils.checkpoint import checkpoint
+from tqdm import tqdm
 
 #----------------------------------------------------------------------------
 # Normalize given tensor to unit magnitude with respect to the given
@@ -484,7 +485,7 @@ class UNetEncoder(torch.nn.Module):
                 skips.append(self.controlnet_conv[name](x))
             else:
                 skips.append(x)
-        return x, skips
+        return x if self.controlnet_conv is None else skips[-1], skips
     
 
 #----------------------------------------------------------------------------
@@ -714,3 +715,129 @@ class PrecondUNetDecoder(torch.nn.Module, BaseAdapter):
 
     def enable_gradient_checkpointing(self):
         self.decoder.gradient_checkpoint = True
+
+
+#----------------------------------------------------------------------------
+# Condition UNet
+
+@persistence.persistent_class
+class PrecondCondition(torch.nn.Module):
+    def __init__(self,
+        img_resolution,         # Image resolution.
+        img_channels,           # Image channels.
+        label_dim,              # Class label dimensionality. 0 = unconditional.
+        use_fp16        = True, # Run the model at FP16 precision?
+        sigma_data      = 0.5,  # Expected standard deviation of the training data.
+        logvar_channels = 128,  # Intermediate dimensionality for uncertainty estimation.
+        **unet_kwargs,          # Keyword arguments for UNet.
+    ):
+        super().__init__()
+        self.img_resolution = img_resolution
+        self.img_channels = img_channels
+        self.label_dim = label_dim
+        self.use_fp16 = use_fp16
+        self.sigma_data = sigma_data
+        self.enc = UNetEncoder(img_resolution=img_resolution, img_channels=img_channels, label_dim=label_dim, **unet_kwargs)
+        self.dec = UNetDecoder(img_resolution=img_resolution, img_channels=img_channels, label_dim=label_dim, **unet_kwargs)
+        self.ctrl = UNetEncoder(img_resolution=img_resolution, img_channels=img_channels, label_dim=label_dim, is_controlnet=True, **unet_kwargs)
+        self.logvar_fourier = MPFourier(logvar_channels)
+        self.logvar_linear = MPConv(logvar_channels, 1, kernel=[])
+
+    def forward(self, x, sigma, condition_x, condition_sigma, class_labels=None, force_fp32=False, return_logvar=False, **unet_kwargs):
+        class_labels = None if self.label_dim == 0 else torch.zeros([1, self.label_dim], device=x.device) if class_labels is None else class_labels.to(torch.float32).reshape(-1, self.label_dim)
+        dtype = torch.float16 if (self.use_fp16 and not force_fp32 and x.device.type == 'cuda') else torch.float32
+        
+        # Controlnet forward.
+        condition_x = condition_x.to(torch.float32)
+        condition_sigma = condition_sigma.to(torch.float32).reshape(-1, 1, 1, 1)
+        c_skip, c_out, c_in, c_noise = self.preconditioning(condition_sigma)
+        x_in = (c_in * condition_x).to(dtype)
+        ctrl_x, ctrl_skips = self.ctrl(x_in, c_noise, class_labels)
+
+        # UNet encoder forward.
+        x = x.to(torch.float32)
+        sigma = sigma.to(torch.float32).reshape(-1, 1, 1, 1)
+        c_skip, c_out, c_in, c_noise = self.preconditioning(sigma)
+        x_in = (c_in * x).to(dtype)
+        enc_x, enc_skips = self.enc(x_in, c_noise, class_labels, **unet_kwargs)
+
+        # UNet decoder forward.
+        F_x = self.dec(enc_x, enc_skips, c_noise, class_labels, additional_x=ctrl_x, additional_skips=ctrl_skips)
+        D_x = c_skip * x + c_out * F_x.to(torch.float32)
+
+        # Estimate uncertainty if requested.
+        if return_logvar:
+            logvar = self.logvar_linear(self.logvar_fourier(c_noise)).reshape(-1, 1, 1, 1)
+            return D_x, logvar # u(sigma) in Equation 21
+        return D_x
+    
+    def preconditioning(self, sigma):
+        c_skip = self.sigma_data ** 2 / (sigma ** 2 + self.sigma_data ** 2)
+        c_out = sigma * self.sigma_data / (sigma ** 2 + self.sigma_data ** 2).sqrt()
+        c_in = 1 / (self.sigma_data ** 2 + sigma ** 2).sqrt()
+        c_noise = sigma.flatten().log() / 4
+        return c_skip, c_out, c_in, c_noise
+    
+    def init_from_pretrained(self, net: Precond):
+        unet = net.unet
+        self.enc.load_state_dict(unet.state_dict(), strict=False)
+        self.dec.load_state_dict(unet.state_dict(), strict=False)
+        self.ctrl.load_state_dict(unet.state_dict(), strict=False)
+        return self
+
+
+#----------------------------------------------------------------------------
+# Generative denoiser
+
+from diffusers import DDIMScheduler
+
+class GenerativeDenoiser(torch.nn.Module):
+    def __init__(self,
+        model: PrecondCondition,
+        gamma: float = 0.414,
+        init_sigma: float = 80.0,
+        num_inference_steps: int = 1,
+    ):
+        super().__init__()
+        self.model = model
+        self.img_resolution = model.img_resolution
+        self.img_channels = model.img_channels
+        self.init_sigma = init_sigma
+        self.gamma = gamma
+        self.num_inference_steps = num_inference_steps
+        
+    def forward(self, y, sigma, labels=None, return_logvar=False, verbose=False, **kwargs):
+        if self.num_inference_steps == 1:
+            return self._forward(y, sigma, labels, return_logvar=return_logvar)
+        
+        assert return_logvar == False, 'return_logvar is not supported for num_inference_steps > 1'
+        
+        scheduler = DDIMScheduler()
+        scheduler.set_timesteps(self.num_inference_steps)
+        alphas = scheduler.alphas_cumprod
+        tmax = torch.ones([y.shape[0], 1, 1, 1], device=y.device) * self.init_sigma
+        
+        # sampling loop
+        xt = torch.randn_like(y) * tmax
+        x0 = self._forward(xt, tmax, labels, return_logvar=False)
+        xt = scheduler.add_noise(x0, torch.randn_like(x0), scheduler.timesteps[0])
+        progress_bar = tqdm(scheduler.timesteps[:-1], disable=not verbose)
+        for i in progress_bar:
+            s, s_t = alphas[i] ** 0.5, (1 - alphas[i]) ** 0.5
+            t = torch.tensor([s_t / s], device=y.device).view(-1, 1, 1, 1)
+            sigma_eff = 1 / (1 / sigma ** 2 + 1 / t ** 2) ** 0.5
+            y_eff = (y / sigma ** 2 + (xt / s) / t ** 2) * sigma_eff ** 2
+            x0 = self._forward(y_eff, sigma_eff, labels)
+            eps_hat = (xt - s * x0) / s_t
+            xt = scheduler.step(eps_hat, i, xt).prev_sample
+
+        return x0
+
+    def _forward(self, y, sigma, labels, return_logvar=False):
+        z = torch.randn_like(y)
+        sigma_hat = sigma * (1 + self.gamma)
+        y_hat = y + z * (sigma_hat ** 2 - sigma ** 2) ** 0.5
+        return self.model(y_hat, sigma_hat, y, sigma, labels, return_logvar=return_logvar)
+    
+    def set_timesteps(self, num_inference_steps: int):
+        self.num_inference_steps = num_inference_steps

@@ -15,6 +15,7 @@ import uuid
 import numpy as np
 import torch
 import dnnlib
+from tqdm import tqdm
 
 #----------------------------------------------------------------------------
 
@@ -260,19 +261,25 @@ def compute_feature_stats_for_generator(opts, detector_url, detector_kwargs, rel
     detector = get_feature_detector(url=detector_url, device=opts.device, num_gpus=opts.num_gpus, rank=opts.rank, verbose=progress.verbose)
 
     # Main loop.
-    while not stats.is_full():
-        images = []
-        for _i in range(batch_size // batch_gen):
-            z = init_sigma*torch.randn([batch_gen, G.img_channels, G.img_resolution, G.img_resolution], device=opts.device) 
-            c = [dataset.get_label(np.random.randint(len(dataset))) for _i in range(batch_gen)]
-            c = torch.from_numpy(np.stack(c)).pin_memory().to(opts.device)
-            images.append(run_generator(z, c, init_sigma))
-        images = torch.cat(images)
-        if images.shape[1] == 1:
-            images = images.repeat([1, 3, 1, 1])
-        features = detector(images, **detector_kwargs)
-        stats.append_torch(features, num_gpus=opts.num_gpus, rank=opts.rank)
-        progress.update(stats.num_items)
+    prev_num_items = 0
+    with tqdm(total=stats.max_items, disable=opts.rank != 0) as pbar:
+        while not stats.is_full():
+            images = []
+            for _i in range(batch_size // batch_gen):
+                z = init_sigma * torch.randn(
+                    [batch_gen, G.img_channels, G.img_resolution, G.img_resolution], device=opts.device
+                )
+                c = [dataset.get_label(np.random.randint(len(dataset))) for _i in range(batch_gen)]
+                c = torch.from_numpy(np.stack(c)).pin_memory().to(opts.device)
+                images.append(run_generator(z, c, init_sigma))
+            images = torch.cat(images)
+            if images.shape[1] == 1:
+                images = images.repeat([1, 3, 1, 1])
+            features = detector(images, **detector_kwargs)
+            stats.append_torch(features, num_gpus=opts.num_gpus, rank=opts.rank)
+            progress.update(stats.num_items)
+            pbar.update(stats.num_items - prev_num_items)
+            prev_num_items = stats.num_items
     return stats
 
 #----------------------------------------------------------------------------
