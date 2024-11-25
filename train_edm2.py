@@ -49,7 +49,13 @@ def setup_training_config(preset: str, **opts):
         raise click.ClickException(f'--data: Unsupported channel count {dataset_channels}')
 
     # Hyperparameters.
-    c.update(total_nimg=opts.duration, batch_size=opts.batch, net=opts.net)
+    c.update(
+        total_nimg=opts.duration, 
+        batch_size=opts.batch, 
+        net=opts.net,
+        P_mean_sigma=preset['P_mean_sigma'],
+        P_std_sigma=preset['P_std_sigma'],
+    )
     c.network_kwargs = dnnlib.EasyDict(**preset['network_kwargs'])
     c.vsd_loss_kwargs = dnnlib.EasyDict(class_name='training.training_loop.NCVSDLoss', **preset['vsd_loss_kwargs'])
     c.dsm_loss_kwargs = dnnlib.EasyDict(class_name='training.training_loop.DSMLoss', **preset['dsm_loss_kwargs'])

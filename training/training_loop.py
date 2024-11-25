@@ -159,7 +159,6 @@ def learning_rate_schedule(cur_nimg, batch_size, ref_lr=100e-4, ref_batches=70e3
 def training_loop(
     net,
     network_kwargs,
-    lora_kwargs         = dict(r=16, lora_alpha=8),
     dataset_kwargs      = dict(class_name='training.dataset.ImageFolderDataset', path=None),
     encoder_kwargs      = dict(class_name='training.encoders.StabilityVAEEncoder'),
     data_loader_kwargs  = dict(class_name='torch.utils.data.DataLoader', pin_memory=True, num_workers=2, prefetch_factor=2),

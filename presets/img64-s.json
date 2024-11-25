@@ -6,13 +6,15 @@
         "img_channels": 3,
         "label_dim": 1000
     },
+    "P_mean_sigma": 0.4, 
+    "P_std_sigma": 2.0,
     "vsd_loss_kwargs": {
-        "P_mean": -0.8, 
-        "P_std": 1.6
-    },
-    "dsm_loss_kwargs": {
         "P_mean": 0.4, 
         "P_std": 2.0
+    },
+    "dsm_loss_kwargs": {
+        "P_mean": -0.8, 
+        "P_std": 1.6
     },
     "lr_kwargs": {
         "ref_lr": 0.0001,
