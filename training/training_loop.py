@@ -317,7 +317,7 @@ def training_loop(
                     
                 with torch.no_grad():
                     ema_net.eval()
-                    ema_net.set_timesteps(4)
+                    ema_net.set_timesteps(num_inference_steps)
                     dist.print0(f'Exporting sample images for {fname}') 
                     bsz = 16 # TODO: infer from kwargs
                     if dist.get_rank() == 0:
