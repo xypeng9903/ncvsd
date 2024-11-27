@@ -309,14 +309,14 @@ def training_loop(
                     ema_net.eval()
                     ema_net.set_timesteps(num_inference_steps)
                     dist.print0(f'Exporting sample images for {fname}')
+                    bsz = 64
                     if dist.get_rank() == 0:
-                        c = torch.eye(64, ema_net.label_dim, device=device)
+                        c = torch.eye(bsz, ema_net.label_dim, device=device)
                         sigma = init_sigma * torch.ones(64, 1, 1, 1, device=device)
-                        z = torch.randn(64, 3, 64, 64, device=device)
+                        z = torch.randn(bsz, ema_net.img_channels, ema_net.img_resolution, ema_net.img_resolution, device=device) * sigma
                         images = ema_net(z, sigma, c)
-                        grid_size = (8, 8)
                         images = images.cpu()
-                        save_image(images, os.path.join(run_dir, f'{fname}.png'), nrow=grid_size[0], normalize=True, value_range=(-1, 1))
+                        save_image(images, os.path.join(run_dir, f'{fname}.png'), nrow=int(bsz ** 0.5), normalize=True, value_range=(-1, 1))
                         del images
                     dist.print0(f'Evaluating metrics for {fname}')
                     for metric in metrics:
