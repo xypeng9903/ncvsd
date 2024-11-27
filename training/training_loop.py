@@ -20,10 +20,15 @@ from torch_utils import training_stats
 from torch_utils import persistence
 from torch_utils import misc
 import gc
-
-from .networks_edm2 import PrecondCondition, GenerativeDenoiser
-from metrics import di_metric_main as metric_main
 from torchvision.utils import save_image
+import json
+
+from metrics import di_metric_main as metric_main
+from .guided_diffusion.unet import Precond, PrecondCondition, GenerativeDenoiser
+from .guided_diffusion.script_util import (
+    model_and_diffusion_defaults,
+    create_model_and_diffusion
+)
 
 
 #----------------------------------------------------------------------------
@@ -120,6 +125,7 @@ def learning_rate_schedule(cur_nimg, batch_size, ref_lr=100e-4, ref_batches=70e3
 
 def training_loop(
     net,
+    pretrained_kwargs,
     network_kwargs,
     dataset_kwargs      = dict(class_name='training.dataset.ImageFolderDataset', path=None),
     encoder_kwargs      = dict(class_name='training.encoders.StabilityVAEEncoder'),
@@ -179,19 +185,23 @@ def training_loop(
     dist.print0('Setting up encoder...')
     encoder = dnnlib.util.construct_class_by_name(**encoder_kwargs)
     
+    # Load teacher model.
+    dist.print0(f'Loading teacher model: {net}')
+    teacher_kwargs = model_and_diffusion_defaults()
+    teacher_kwargs.update(**pretrained_kwargs)
+    unet, diffusion = create_model_and_diffusion(**teacher_kwargs)
+    unet.load_state_dict(torch.load(net, weights_only=True, map_location='cpu'))
+    
     # Setup networks.
     dist.print0('Constructing networks...')
-    with dnnlib.util.open_url(net, verbose=True) as f:
-        data = pickle.load(f)
-        dist.print0(f'Load teacher model: {net}')
-    net = data['ema'].eval().requires_grad_(False).to(device)
-    generator = PrecondCondition(**network_kwargs).init_from_pretrained(net).requires_grad_(True).to(device)
-    score_model = PrecondCondition(**network_kwargs).init_from_pretrained(net).requires_grad_(True).to(device)
-    if gradient_checkpoint:
-        generator.enable_gradient_checkpointing()
-        score_model.enable_gradient_checkpointing()
+    net = Precond(diffusion.alphas_cumprod, **network_kwargs)
+    net = net.init_from_pretrained(unet).eval().to(device)
+    score_model = PrecondCondition(diffusion.alphas_cumprod, **network_kwargs).init_from_pretrained(unet).requires_grad_(True).to(device)
+    generator = PrecondCondition(diffusion.alphas_cumprod, **network_kwargs).init_from_pretrained(unet).requires_grad_(True).to(device)
     generator = GenerativeDenoiser(generator, gamma=gamma, init_sigma=init_sigma)
     ema_generator = dnnlib.util.construct_class_by_name(net=generator, **ema_kwargs) if ema_kwargs is not None else None
+
+    del unet
     
     # Print network summary.
     if dist.get_rank() == 0:
@@ -236,6 +246,9 @@ def training_loop(
     dist.print0(f'Training from {state.cur_nimg // 1000} kimg to {stop_at_nimg // 1000} kimg:')
     dist.print0()
 
+    gc.collect()
+    torch.cuda.empty_cache()
+    
     # Main training loop.
     dataset_sampler = misc.InfiniteSampler(dataset=dataset_obj, rank=dist.get_rank(), num_replicas=dist.get_world_size(), seed=seed, start_idx=state.cur_nimg)
     dataset_iterator = iter(dnnlib.util.construct_class_by_name(dataset=dataset_obj, sampler=dataset_sampler, batch_size=batch_gpu, **data_loader_kwargs))
@@ -243,9 +256,6 @@ def training_loop(
     cumulative_training_time = 0
     start_nimg = state.cur_nimg
     stats_jsonl = None
-    gc.collect()
-    torch.cuda.empty_cache()
-    start_time = time.time()
     while True:
         done = (state.cur_nimg >= stop_at_nimg)
 
@@ -307,23 +317,23 @@ def training_loop(
                     
                 with torch.no_grad():
                     ema_net.eval()
-                    ema_net.set_timesteps(num_inference_steps)
-                    dist.print0(f'Exporting sample images for {fname}')
+                    ema_net.set_timesteps(4)
+                    dist.print0(f'Exporting sample images for {fname}') 
+                    bsz = 16 # TODO: infer from kwargs
                     if dist.get_rank() == 0:
-                        c = torch.eye(64, ema_net.label_dim, device=device)
-                        sigma = init_sigma * torch.ones(64, 1, 1, 1, device=device)
-                        z = torch.randn(64, 3, 64, 64, device=device)
+                        c = torch.eye(16, ema_net.label_dim, device=device)
+                        sigma = init_sigma * torch.ones(bsz, 1, 1, 1, device=device)
+                        z = torch.randn(bsz, ema_net.img_channels, ema_net.img_resolution, ema_net.img_resolution, device=device) * sigma
                         images = ema_net(z, sigma, c)
-                        grid_size = (8, 8)
                         images = images.cpu()
-                        save_image(images, os.path.join(run_dir, f'{fname}.png'), nrow=grid_size[0], normalize=True, value_range=(-1, 1))
+                        save_image(images, os.path.join(run_dir, f'{fname}.png'), nrow=int(bsz ** 0.5), normalize=True, value_range=(-1, 1))
                         del images
-                    dist.print0(f'Evaluating metrics for {fname}')
-                    for metric in metrics:
-                        result_dict = metric_main.calc_metric(metric=metric, G=ema_net, init_sigma=init_sigma,
-                            dataset_kwargs=dataset_kwargs, num_gpus=dist.get_world_size(), rank=dist.get_rank(), device=device)
-                        if dist.get_rank() == 0:
-                            metric_main.report_metric(result_dict, run_dir=run_dir, snapshot_pkl=f'{fname}.png')                        
+                    # dist.print0(f'Evaluating metrics for {fname}')
+                    # for metric in metrics:
+                    #     result_dict = metric_main.calc_metric(metric=metric, G=ema_net, init_sigma=init_sigma,
+                    #         dataset_kwargs=dataset_kwargs, num_gpus=dist.get_world_size(), rank=dist.get_rank(), device=device)
+                    #     if dist.get_rank() == 0:
+                    #         metric_main.report_metric(result_dict, run_dir=run_dir, snapshot_pkl=f'{fname}.png')                        
 
         # Save state checkpoint.
         if checkpoint_nimg is not None and (done or state.cur_nimg % checkpoint_nimg == 0) and state.cur_nimg != start_nimg:

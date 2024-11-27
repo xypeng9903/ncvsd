@@ -56,6 +56,7 @@ def setup_training_config(preset: str, **opts):
         P_mean_sigma=preset['P_mean_sigma'],
         P_std_sigma=preset['P_std_sigma'],
     )
+    c.pretrained_kwargs = dnnlib.EasyDict(**preset['pretrained_kwargs'])
     c.network_kwargs = dnnlib.EasyDict(**preset['network_kwargs'])
     c.vsd_loss_kwargs = dnnlib.EasyDict(class_name='training.training_loop.NCVSDLoss', **preset['vsd_loss_kwargs'])
     c.dsm_loss_kwargs = dnnlib.EasyDict(class_name='training.training_loop.DSMLoss', **preset['dsm_loss_kwargs'])

@@ -1,11 +1,5 @@
-# python dataset_tool.py convert \
-#         --source=/sharedata/home/pxy/workspace/data/train/ILSVRC/Data/CLS-LOC/train \
-#         --dest=/sharedata/home/pxy/workspace/data/train/edm/edm2-imagenet-64x64.zip \
-#         --resolution=64x64 \
-#         --transform=center-crop-dhariwal
-
 python dataset_tool.py convert \
-        --source=/data0/pxy/ILSVRC/Data/CLS-LOC/train \
-        --dest=/data0/pxy/code/data/train/edm/img512.zip \
-        --resolution=512x512 \
+        --source=/data0/pxy/code/data/train/ffhq256 \
+        --dest=/data0/pxy/code/data/train/edm/ffhq256.zip \
+        --resolution=256x256 \
         --transform=center-crop-dhariwal

@@ -1,0 +1,44 @@
+{
+    "pretrained_kwargs": {
+        "image_size": 256, 
+        "num_res_blocks": 1, 
+        "num_head_channels": 64, 
+        "attention_resolutions": "16", 
+        "dropout": 0.0, 
+        "resblock_updown": true, 
+        "learn_sigma": true
+    },
+    "network_kwargs": {
+        "image_size": 256,
+        "in_channels": 3,
+        "model_channels": 128,
+        "out_channels": 6,
+        "num_res_blocks": 1,
+        "attention_resolutions": [16],
+        "channel_mult": [1, 1, 2, 2, 4, 4],
+        "conv_resample": true,
+        "dims": 2,
+        "use_checkpoint": false,
+        "use_fp16": true,
+        "num_heads": 4,
+        "num_head_channels": 64,
+        "num_heads_upsample": -1,
+        "use_scale_shift_norm": true,
+        "resblock_updown": true,
+        "use_new_attention_order": false
+    },
+    "P_mean_sigma": 0.4, 
+    "P_std_sigma": 2.0,
+    "vsd_loss_kwargs": {
+        "P_mean": 0.4, 
+        "P_std": 2.0
+    },
+    "dsm_loss_kwargs": {
+        "P_mean": -0.8, 
+        "P_std": 1.6
+    },
+    "lr_kwargs": {
+        "ref_lr": 0.0001,
+        "ref_batches": 35000
+    }
+}
