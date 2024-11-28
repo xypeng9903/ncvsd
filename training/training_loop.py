@@ -194,7 +194,7 @@ def training_loop(
     # Setup networks.
     dist.print0('Constructing networks...')
     net = Precond(diffusion.alphas_cumprod, **network_kwargs)
-    net = net.init_from_pretrained(unet).eval().requires_grad_(False).to(device)
+    net = net.init_from_pretrained(unet).convert_to_fp16().eval().requires_grad_(False).to(device)
     score_model = PrecondCondition(diffusion.alphas_cumprod, **network_kwargs).init_from_pretrained(unet).requires_grad_(True).to(device)
     generator = PrecondCondition(diffusion.alphas_cumprod, **network_kwargs).init_from_pretrained(unet).requires_grad_(True).to(device)
     generator = GenerativeDenoiser(generator, gamma=gamma, init_sigma=init_sigma)

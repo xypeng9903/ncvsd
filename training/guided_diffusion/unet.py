@@ -1729,6 +1729,12 @@ class Precond(th.nn.Module):
     def init_from_pretrained(self, unet: UNetModel):
         self.unet.load_state_dict(unet.state_dict(), strict=False)
         return self
+    
+    def convert_to_fp16(self):
+        self.unet.convert_to_fp16()
+        self.unet.dtype = th.float16
+        self.use_fp16 = True
+        return self
 
 
 #----------------------------------------------------------------------------
