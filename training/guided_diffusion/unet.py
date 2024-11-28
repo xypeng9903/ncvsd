@@ -1370,9 +1370,10 @@ class UNetEncoder(nn.Module):
         self._feature_size += ch
 
         # Add zero convolution for ControlNet
-        controlnet_block = nn.Conv2d(ch, ch, kernel_size=1)
-        controlnet_block = zero_module(controlnet_block)
-        self.controlnet_mid_block = controlnet_block
+        if is_controlnet:
+            controlnet_block = nn.Conv2d(ch, ch, kernel_size=1)
+            controlnet_block = zero_module(controlnet_block)
+            self.controlnet_mid_block = controlnet_block
 
     def enable_gradient_checkpointing(self):
         for module in self.modules():
@@ -1757,7 +1758,7 @@ class PrecondCondition(th.nn.Module):
             self.enc.convert_to_fp16()
             self.dec.convert_to_fp16()
             self.ctrl.convert_to_fp16()
-        self.logvar_linear = nn.Sequential(
+        self.logvar_net = nn.Sequential(
             linear(1, logvar_channels),
             nn.SiLU(),
             linear(logvar_channels, 1),
@@ -1789,7 +1790,7 @@ class PrecondCondition(th.nn.Module):
 
         # Estimate uncertainty if requested.
         if return_logvar:
-            logvar = self.logvar_linear(c_noise.view(-1, 1).to(th.float32) / 1000).reshape(-1, 1, 1, 1)
+            logvar = self.logvar_net(c_noise.view(-1, 1).to(th.float32) / 1000).reshape(-1, 1, 1, 1)
             return D_x, logvar # u(sigma) in Equation 21
         return D_x
     

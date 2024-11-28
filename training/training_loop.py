@@ -21,7 +21,6 @@ from torch_utils import persistence
 from torch_utils import misc
 import gc
 from torchvision.utils import save_image
-import json
 
 from metrics import di_metric_main as metric_main
 from .guided_diffusion.unet import Precond, PrecondCondition, GenerativeDenoiser
@@ -186,7 +185,7 @@ def training_loop(
     encoder = dnnlib.util.construct_class_by_name(**encoder_kwargs)
     
     # Load teacher model.
-    dist.print0(f'Loading teacher model: {net}')
+    dist.print0(f'Loading teacher model {net}')
     teacher_kwargs = model_and_diffusion_defaults()
     teacher_kwargs.update(**pretrained_kwargs)
     unet, diffusion = create_model_and_diffusion(**teacher_kwargs)
@@ -195,7 +194,7 @@ def training_loop(
     # Setup networks.
     dist.print0('Constructing networks...')
     net = Precond(diffusion.alphas_cumprod, **network_kwargs)
-    net = net.init_from_pretrained(unet).eval().to(device)
+    net = net.init_from_pretrained(unet).eval().requires_grad_(False).to(device)
     score_model = PrecondCondition(diffusion.alphas_cumprod, **network_kwargs).init_from_pretrained(unet).requires_grad_(True).to(device)
     generator = PrecondCondition(diffusion.alphas_cumprod, **network_kwargs).init_from_pretrained(unet).requires_grad_(True).to(device)
     generator = GenerativeDenoiser(generator, gamma=gamma, init_sigma=init_sigma)
@@ -328,7 +327,7 @@ def training_loop(
                         images = images.cpu()
                         save_image(images, os.path.join(run_dir, f'{fname}.png'), nrow=int(bsz ** 0.5), normalize=True, value_range=(-1, 1))
                         del images
-                    # dist.print0(f'Evaluating metrics for {fname}')
+                    # TODO: dist.print0(f'Evaluating metrics for {fname}')
                     # for metric in metrics:
                     #     result_dict = metric_main.calc_metric(metric=metric, G=ema_net, init_sigma=init_sigma,
                     #         dataset_kwargs=dataset_kwargs, num_gpus=dist.get_world_size(), rank=dist.get_rank(), device=device)
@@ -370,7 +369,7 @@ def training_loop(
                     y=y, 
                     sigma=sigma,
                     labels=labels.to(device)
-                )
+                ).mean(dim=[1, 2, 3])
                 dsm_loss.sum().mul(loss_scaling / batch_gpu_total).backward()
 
         # Run optimizer and update weights.
@@ -407,7 +406,7 @@ def training_loop(
                     y=y,
                     sigma=sigma,
                     labels=labels.to(device)
-                )
+                ).mean(dim=[1, 2, 3])
                 vsd_loss.sum().mul(loss_scaling / batch_gpu_total).backward()
 
         # Run optimizer and update weights.
