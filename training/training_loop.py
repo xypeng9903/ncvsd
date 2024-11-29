@@ -133,7 +133,7 @@ def training_loop(
     P_std_sigma         = 2.0,      # Standard deviation of the LogNormal sampler of noise condition.
     gamma               = 0.414,    # TODO.
     init_sigma          = 80.0,     # Maximum noise level.
-    num_inference_steps = 2,      # Number of inference steps.
+    num_inference_steps = 2,       # Number of inference steps.
 
     run_dir             = '.',      # Output directory.
     seed                = 0,        # Global random seed.
@@ -245,10 +245,8 @@ def training_loop(
     stats_jsonl = None
     gc.collect()
     torch.cuda.empty_cache()
-    start_time = time.time()
     while True:
         done = (state.cur_nimg >= stop_at_nimg)
-
 
         #------------------------------------------------------------------------------------
         # Report status.
@@ -306,24 +304,26 @@ def training_loop(
                 del data # conserve memory
                     
                 with torch.no_grad():
+                    bsz = 16
                     ema_net.eval()
                     ema_net.set_timesteps(num_inference_steps)
+
                     dist.print0(f'Exporting sample images for {fname}')
                     if dist.get_rank() == 0:
-                        c = torch.eye(64, ema_net.label_dim, device=device)
-                        sigma = init_sigma * torch.ones(64, 1, 1, 1, device=device)
-                        z = torch.randn(64, 3, 64, 64, device=device)
-                        images = ema_net(z, sigma, c)
-                        grid_size = (8, 8)
-                        images = images.cpu()
-                        save_image(images, os.path.join(run_dir, f'{fname}.png'), nrow=grid_size[0], normalize=True, value_range=(-1, 1))
-                        del images
-                    dist.print0(f'Evaluating metrics for {fname}')
-                    for metric in metrics:
-                        result_dict = metric_main.calc_metric(metric=metric, G=ema_net, init_sigma=init_sigma,
-                            dataset_kwargs=dataset_kwargs, num_gpus=dist.get_world_size(), rank=dist.get_rank(), device=device)
-                        if dist.get_rank() == 0:
-                            metric_main.report_metric(result_dict, run_dir=run_dir, snapshot_pkl=f'{fname}.png')                        
+                        c = torch.eye(bsz, ema_net.label_dim, device=device)
+                        sigma = init_sigma * torch.ones(bsz, 1, 1, 1, device=device)
+                        z = torch.randn(bsz, ema_net.img_channels, ema_net.img_resolution, ema_net.img_resolution, device=device) * sigma
+                        x = ema_net(z, sigma, c)
+                        x = encoder.decode(x).cpu()
+                        save_image(x.float() / 255., os.path.join(run_dir, f'{fname}.png'), nrow=int(bsz ** 0.5))
+                        del x
+
+                    # dist.print0(f'Evaluating metrics for {fname}')
+                    # for metric in metrics:
+                    #     result_dict = metric_main.calc_metric(metric=metric, G=ema_net, init_sigma=init_sigma,
+                    #         dataset_kwargs=dataset_kwargs, num_gpus=dist.get_world_size(), rank=dist.get_rank(), device=device)
+                    #     if dist.get_rank() == 0:
+                    #         metric_main.report_metric(result_dict, run_dir=run_dir, snapshot_pkl=f'{fname}.png')                        
 
         # Save state checkpoint.
         if checkpoint_nimg is not None and (done or state.cur_nimg % checkpoint_nimg == 0) and state.cur_nimg != start_nimg:

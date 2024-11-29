@@ -2,3 +2,4 @@
 training-runs/
 *.ipynb
 out/
+*.png
