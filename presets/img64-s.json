@@ -6,6 +6,7 @@
         "img_channels": 3,
         "label_dim": 1000
     },
+    "gamma": 0.414,
     "P_mean_sigma": 0.4, 
     "P_std_sigma": 2.0,
     "vsd_loss_kwargs": {
