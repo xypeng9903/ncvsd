@@ -133,7 +133,8 @@ def training_loop(
     P_std_sigma         = 2.0,      # Standard deviation of the LogNormal sampler of noise condition.
     gamma               = 0.414,    # TODO.
     init_sigma          = 80.0,     # Maximum noise level.
-    num_inference_steps = 2,       # Number of inference steps.
+    num_inference_steps = 2,        # Number of inference steps.
+    eval_batch_size     = 16,       # Batch size for evaluation.
 
     run_dir             = '.',      # Output directory.
     seed                = 0,        # Global random seed.
@@ -304,10 +305,11 @@ def training_loop(
                 del data # conserve memory
                     
                 with torch.no_grad():
-                    bsz = 16
+                    bsz = eval_batch_size
                     ema_net.eval()
                     ema_net.set_timesteps(num_inference_steps)
 
+                    # Export sample images.
                     dist.print0(f'Exporting sample images for {fname}')
                     if dist.get_rank() == 0:
                         c = torch.eye(bsz, ema_net.label_dim, device=device)
@@ -318,6 +320,7 @@ def training_loop(
                         save_image(x.float() / 255., os.path.join(run_dir, f'{fname}.png'), nrow=int(bsz ** 0.5))
                         del x
 
+                    # Evaluate metrics.
                     # dist.print0(f'Evaluating metrics for {fname}')
                     # for metric in metrics:
                     #     result_dict = metric_main.calc_metric(metric=metric, G=ema_net, init_sigma=init_sigma,
