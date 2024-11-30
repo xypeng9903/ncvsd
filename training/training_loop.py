@@ -425,8 +425,8 @@ def training_loop(
         progress = state.cur_nimg / total_nimg
         estimated_time = total_nimg * (1 - progress) / batch_size * batch_time
         dist.print0(
-            f'\rProgress: [{int(progress * 50) * "="}{(50 - int(progress * 50)) * " "}] {state.cur_nimg} / {total_nimg} ({progress * 100:.2f})%',
-            f'| estimated_time: {dnnlib.util.format_time(estimated_time)} | vsd_loss: {vsd_loss.mean().item():.4f} | dsm_loss: {dsm_loss.mean().item():.4f}', 
+            f'\rProgress: [{int(progress * 50) * "="}{(50 - int(progress * 50)) * " "}] {state.cur_nimg} / {total_nimg} ({progress * 100:.2f} %)',
+            f'| estimated_time: {dnnlib.util.format_time(estimated_time)} | lr: {lr:.2e} | vsd_loss: {vsd_loss.mean().item():.4f} | dsm_loss: {dsm_loss.mean().item():.4f}', 
             end='', flush=True
         )
 
