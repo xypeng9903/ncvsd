@@ -1,0 +1,25 @@
+{
+    "network_kwargs": {
+        "model_channels": 384,
+        "dropout": 0.0,
+        "img_resolution": 64,
+        "img_channels": 3,
+        "label_dim": 1000
+    },
+    "gamma": 0.414,
+    "P_mean_sigma": 0.4, 
+    "P_std_sigma": 2.0,
+    "g_lr_scaling": 0.01,
+    "vsd_loss_kwargs": {
+        "P_mean": 0.4, 
+        "P_std": 2.0
+    },
+    "dsm_loss_kwargs": {
+        "P_mean": -0.8, 
+        "P_std": 1.6
+    },
+    "lr_kwargs": {
+        "ref_lr": 0.0070,
+        "ref_batches": 35000
+    }
+}
