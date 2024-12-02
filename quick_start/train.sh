@@ -4,29 +4,30 @@ export CUDA_VISIBLE_DEVICES=1
 # batch size 128
 
 # img64-s (bsz 128)
-# torchrun --standalone --nproc_per_node=1 train_edm2.py \
-#     --outdir="training-runs/img64-s-bsz-128" \
-#     --preset="presets/img64-s-bsz-128.json" \
-#     --data="../data/train/edm/img64.zip" \
-#     --net="../model_zoo/edm2/imagenet64-s.pkl" \
-#     --batch-gpu=8 \
-#     --batch=128 \
-#     --duration="16Mi" \
-#     --checkpoint="1Mi" \
-#     --snapshot="1Mi" \
-#     --grad-checkpoint=False
-
 torchrun --standalone --nproc_per_node=1 train_edm2.py \
-    --outdir="training-runs/img64-xl-bsz-128" \
-    --preset="presets/img64-xl-bsz-128.json" \
+    --outdir="training-runs/img64-s-bsz-128" \
+    --preset="presets/img64-s-bsz-128.json" \
     --data="../data/train/edm/img64.zip" \
-    --net="../model_zoo/edm2/edm2-img64-xl-0671088-0.040.pkl" \
+    --net="../model_zoo/edm2/edm2-img64-s-1073741-0.075.pkl" \
     --batch-gpu=8 \
     --batch=128 \
     --duration="16Mi" \
     --checkpoint="1Mi" \
     --snapshot="1Mi" \
     --grad-checkpoint=False
+
+# img64-xl (bsz 128)
+# torchrun --standalone --nproc_per_node=1 train_edm2.py \
+#     --outdir="training-runs/img64-xl-bsz-128" \
+#     --preset="presets/img64-xl-bsz-128.json" \
+#     --data="../data/train/edm/img64.zip" \
+#     --net="../model_zoo/edm2/edm2-img64-xl-0671088-0.040.pkl" \
+#     --batch-gpu=8 \
+#     --batch=128 \
+#     --duration="16Mi" \
+#     --checkpoint="1Mi" \
+#     --snapshot="1Mi" \
+#     --grad-checkpoint=False
 
 
 #---------------------------------------------------------
