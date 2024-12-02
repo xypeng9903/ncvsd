@@ -133,7 +133,7 @@ def training_loop(
     dsm_loss_kwargs     = dict(class_name='training.training_loop.DSMLoss'),
     optimizer_kwargs    = dict(class_name='torch.optim.Adam', betas=(0.9, 0.99)),
     lr_kwargs           = dict(func_name='training.training_loop.learning_rate_schedule'),
-    ema_kwargs          = dict(class_name='training.phema.PowerFunctionEMA'),
+    ema_kwargs          = dict(class_name='training.phema.PowerFunctionEMA', stds=[0.010, 0.050, 0.100]),
     P_mean_sigma        = 0.4,      # Mean of the LogNormal sampler of noise condition.
     P_std_sigma         = 2.0,      # Standard deviation of the LogNormal sampler of noise condition.
     gamma               = 0.414,    # TODO.
@@ -382,7 +382,7 @@ def training_loop(
         # Run optimizer and update weights.
         lr = dnnlib.util.call_func_by_name(cur_nimg=state.cur_nimg, batch_size=batch_size, **lr_kwargs)
         for g in s_optimizer.param_groups:
-            g['lr'] = lr
+            g['lr'] = lr * g_lr_scaling
             for param in g['params']:
                 if param.grad is not None and force_finite:
                     torch.nan_to_num(param.grad, nan=0, posinf=0, neginf=0, out=param.grad)     

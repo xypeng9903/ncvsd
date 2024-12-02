@@ -27,6 +27,8 @@
         "resblock_updown": true,
         "use_new_attention_order": false
     },
+    "g_lr_scaling": 0.01,
+    "gamma": 0.414,
     "P_mean_sigma": 0.4, 
     "P_std_sigma": 2.0,
     "vsd_loss_kwargs": {
@@ -38,7 +40,8 @@
         "P_std": 1.6
     },
     "lr_kwargs": {
-        "ref_lr": 0.0001,
-        "ref_batches": 35000
+        "ref_lr": 1e-3,
+        "ref_batches": 0,
+        "rampup_Mimg": 0
     }
 }
