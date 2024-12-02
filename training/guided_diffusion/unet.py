@@ -659,7 +659,7 @@ class UNetModel(nn.Module):
         :param y: an [N] Tensor of labels, if class-conditional.
         :return: an [N x C x ...] Tensor of outputs.
         """
-        if y.shape[-1] == 0:
+        if y is not None and y.shape[-1] == 0:
             y = None
 
         assert (y is not None) == (
@@ -1406,7 +1406,7 @@ class UNetEncoder(nn.Module):
         :param y: an [N] Tensor of labels, if class-conditional.
         :return: an [N x C x ...] Tensor of outputs.
         """
-        if y.shape[-1] == 0:
+        if y is not None and y.shape[-1] == 0:
             y = None
 
         assert (y is not None) == (
@@ -1633,7 +1633,7 @@ class UNetDecoder(nn.Module):
         :param y: an [N] Tensor of labels, if class-conditional.
         :return: an [N x C x ...] Tensor of outputs.
         """
-        if y.shape[-1] == 0:
+        if y is not None and y.shape[-1] == 0:
             y = None
 
         assert (y is not None) == (
