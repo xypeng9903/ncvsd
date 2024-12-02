@@ -128,13 +128,13 @@ def training_loop(
     dsm_loss_kwargs     = dict(class_name='training.training_loop.DSMLoss'),
     optimizer_kwargs    = dict(class_name='torch.optim.Adam', betas=(0.9, 0.99)),
     lr_kwargs           = dict(func_name='training.training_loop.learning_rate_schedule'),
-    ema_kwargs          = dict(class_name='training.phema.PowerFunctionEMA'),
+    ema_kwargs          = dict(class_name='training.phema.PowerFunctionEMA', stds=[0.010, 0.050, 0.100]),
     P_mean_sigma        = 0.4,      # Mean of the LogNormal sampler of noise condition.
     P_std_sigma         = 2.0,      # Standard deviation of the LogNormal sampler of noise condition.
     gamma               = 0.414,    # TODO.
     init_sigma          = 80.0,     # Maximum noise level.
     num_inference_steps = 2,        # Number of inference steps.
-    eval_batch_size     = 16,       # Batch size for evaluation.
+    eval_batch_size     = 64,       # Batch size for evaluation.
     g_lr_scaling        = 1,        # Learning rate scaling factor for the generator.
 
     run_dir             = '.',      # Output directory.
