@@ -1669,7 +1669,6 @@ class UNetDecoder(nn.Module):
 class Precond(th.nn.Module):
     def __init__(self,
         alphas_cumprod,          # DDPM schedule.
-        sigma_data      = 0.5,   # Expected standard deviation of the training data.
         quantize        = False, # Use quantized t-space?
         **unet_kwargs,           # Keyword arguments for UNet.
     ):
@@ -1677,7 +1676,6 @@ class Precond(th.nn.Module):
         sigmas = ((1 - alphas_cumprod) / alphas_cumprod) ** 0.5
         self.register_buffer('log_sigmas', th.log(th.tensor(sigmas)))
         self.use_fp16 = unet_kwargs.get('use_fp16', False)
-        self.sigma_data = sigma_data
         self.quantize = quantize
         self.unet = UNetModel(**unet_kwargs)
         self.img_resolution = unet_kwargs['image_size']
@@ -1702,7 +1700,7 @@ class Precond(th.nn.Module):
     def preconditioning(self, sigma):
         c_skip = 1.
         c_out = -sigma
-        c_in = 1 / (sigma ** 2 + self.sigma_data ** 2) ** 0.5
+        c_in = 1 / (sigma ** 2 + 1) ** 0.5
         c_noise = self.sigma_to_t(sigma.view(-1))
         return c_skip, c_out, c_in, c_noise
     
