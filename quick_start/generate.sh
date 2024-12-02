@@ -1,4 +1,10 @@
+NET=$1
+STEPS=$2
+
+export CUDA_VISIBLE_DEVICES=1
+
 # ffhq
 python generate_images.py \
-    --net="/data0/pxy/code/ncvsd-edm2/training-runs/ffhq256/snapshot-0000000-0.050.pkl" \
-    --outdir="ffhq256/out"
+    --net=$NET \
+    --outdir="ffhq256/out" \
+    --steps $STEPS \
