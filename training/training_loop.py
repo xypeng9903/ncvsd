@@ -21,8 +21,7 @@ from torch_utils import persistence
 from torch_utils import misc
 import gc
 
-from .networks_edm2 import PrecondCondition, GenerativeDenoiser
-from metrics import di_metric_main as metric_main
+from training.networks_edm2 import PrecondCondition, GenerativeDenoiser
 from torchvision.utils import save_image
 
 
