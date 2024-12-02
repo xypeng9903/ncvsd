@@ -138,7 +138,9 @@ def training_loop(
     P_std_sigma         = 2.0,      # Standard deviation of the LogNormal sampler of noise condition.
     gamma               = 0.414,    # TODO.
     init_sigma          = 80.0,     # Maximum noise level.
-    num_inference_steps = 2,      # Number of inference steps.
+    num_inference_steps = 2,        # Number of inference steps.
+    eval_batch_size     = 16,       # Batch size for evaluation.
+    g_lr_scaling        = 1,        # Learning rate scaling factor for the generator.
 
     run_dir             = '.',      # Output directory.
     seed                = 0,        # Global random seed.
@@ -255,9 +257,10 @@ def training_loop(
     cumulative_training_time = 0
     start_nimg = state.cur_nimg
     stats_jsonl = None
+    gc.collect()
+    torch.cuda.empty_cache()
     while True:
         done = (state.cur_nimg >= stop_at_nimg)
-
 
         #------------------------------------------------------------------------------------
         # Report status.
@@ -315,19 +318,23 @@ def training_loop(
                 del data # conserve memory
                     
                 with torch.no_grad():
+                    bsz = eval_batch_size
                     ema_net.eval()
                     ema_net.set_timesteps(num_inference_steps)
-                    dist.print0(f'Exporting sample images for {fname}') 
-                    bsz = 16 # TODO: infer from kwargs
+
+                    # Export sample images.
+                    dist.print0(f'Exporting sample images for {fname}')
                     if dist.get_rank() == 0:
-                        c = torch.eye(16, ema_net.label_dim, device=device)
+                        c = torch.eye(bsz, ema_net.label_dim, device=device)
                         sigma = init_sigma * torch.ones(bsz, 1, 1, 1, device=device)
                         z = torch.randn(bsz, ema_net.img_channels, ema_net.img_resolution, ema_net.img_resolution, device=device) * sigma
-                        images = ema_net(z, sigma, c)
-                        images = images.cpu()
-                        save_image(images, os.path.join(run_dir, f'{fname}.png'), nrow=int(bsz ** 0.5), normalize=True, value_range=(-1, 1))
-                        del images
-                    # TODO: dist.print0(f'Evaluating metrics for {fname}')
+                        x = ema_net(z, sigma, c)
+                        x = encoder.decode(x).cpu()
+                        save_image(x.float() / 255., os.path.join(run_dir, f'{fname}.png'), nrow=int(bsz ** 0.5))
+                        del x
+
+                    # Evaluate metrics.
+                    # dist.print0(f'Evaluating metrics for {fname}')
                     # for metric in metrics:
                     #     result_dict = metric_main.calc_metric(metric=metric, G=ema_net, init_sigma=init_sigma,
                     #         dataset_kwargs=dataset_kwargs, num_gpus=dist.get_world_size(), rank=dist.get_rank(), device=device)
@@ -412,7 +419,7 @@ def training_loop(
         # Run optimizer and update weights.
         lr = dnnlib.util.call_func_by_name(cur_nimg=state.cur_nimg, batch_size=batch_size, **lr_kwargs)
         for g in g_optimizer.param_groups:
-            g['lr'] = lr
+            g['lr'] = lr * g_lr_scaling
             for param in g['params']:
                 if param.grad is not None and force_finite:
                     torch.nan_to_num(param.grad, nan=0, posinf=0, neginf=0, out=param.grad)     
@@ -431,8 +438,8 @@ def training_loop(
         progress = state.cur_nimg / total_nimg
         estimated_time = total_nimg * (1 - progress) / batch_size * batch_time
         dist.print0(
-            f'\rProgress: [{int(progress * 50) * "="}{(50 - int(progress * 50)) * " "}] {state.cur_nimg} / {total_nimg} ({progress * 100:.2f})%',
-            f'| estimated_time: {dnnlib.util.format_time(estimated_time)} | vsd_loss: {vsd_loss.mean().item():.4f} | dsm_loss: {dsm_loss.mean().item():.4f}', 
+            f'\rProgress: [{int(progress * 50) * "="}{(50 - int(progress * 50)) * " "}] {state.cur_nimg} / {total_nimg} ({progress * 100:.2f} %)',
+            f'| estimated_time: {dnnlib.util.format_time(estimated_time)} | lr: {lr:.2e} | vsd_loss: {vsd_loss.mean().item():.4f} | dsm_loss: {dsm_loss.mean().item():.4f}', 
             end='', flush=True
         )
 

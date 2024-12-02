@@ -55,6 +55,8 @@ def setup_training_config(preset: str, **opts):
         net=opts.net,
         P_mean_sigma=preset['P_mean_sigma'],
         P_std_sigma=preset['P_std_sigma'],
+        gamma=preset['gamma'],
+        g_lr_scaling=preset['g_lr_scaling'],
     )
     c.pretrained_kwargs = dnnlib.EasyDict(**preset['pretrained_kwargs'])
     c.network_kwargs = dnnlib.EasyDict(**preset['network_kwargs'])

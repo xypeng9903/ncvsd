@@ -2,4 +2,8 @@
 training-runs/
 *.ipynb
 out/
+<<<<<<< HEAD
 *.out
+=======
+*.png
+>>>>>>> MP-controlnet
