@@ -135,6 +135,7 @@ def training_loop(
     init_sigma          = 80.0,     # Maximum noise level.
     num_inference_steps = 2,        # Number of inference steps.
     eval_batch_size     = 16,       # Batch size for evaluation.
+    g_lr_scaling        = 1,        # Learning rate scaling factor for the generator.
 
     run_dir             = '.',      # Output directory.
     seed                = 0,        # Global random seed.
@@ -406,7 +407,7 @@ def training_loop(
         # Run optimizer and update weights.
         lr = dnnlib.util.call_func_by_name(cur_nimg=state.cur_nimg, batch_size=batch_size, **lr_kwargs)
         for g in g_optimizer.param_groups:
-            g['lr'] = lr
+            g['lr'] = lr * g_lr_scaling
             for param in g['params']:
                 if param.grad is not None and force_finite:
                     torch.nan_to_num(param.grad, nan=0, posinf=0, neginf=0, out=param.grad)     
