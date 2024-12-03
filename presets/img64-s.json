@@ -19,7 +19,7 @@
         "P_std": 1.6
     },
     "lr_kwargs": {
-        "ref_lr": 0.01,
+        "ref_lr": 0.0100,
         "ref_batches": 35000
     }
 }

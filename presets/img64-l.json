@@ -1,6 +1,6 @@
 {
     "network_kwargs": {
-        "model_channels": 384,
+        "model_channels": 320,
         "dropout": 0.1,
         "img_resolution": 64,
         "img_channels": 3,
@@ -19,8 +19,7 @@
         "P_std": 1.6
     },
     "lr_kwargs": {
-        "ref_lr": 7e-4,
-        "ref_batches": 2000,
-        "rampup_Mimg": 0
+        "ref_lr": 0.0080,
+        "ref_batches": 35000
     }
 }

@@ -313,14 +313,9 @@ def training_loop(
                         x = encoder.decode(x).cpu()
                         save_image(x.float() / 255., os.path.join(run_dir, f'{fname}.png'), nrow=int(bsz ** 0.5))
                         del x
-
-                    # Evaluate metrics.
-                    # dist.print0(f'Evaluating metrics for {fname}')
-                    # for metric in metrics:
-                    #     result_dict = metric_main.calc_metric(metric=metric, G=ema_net, init_sigma=init_sigma,
-                    #         dataset_kwargs=dataset_kwargs, num_gpus=dist.get_world_size(), rank=dist.get_rank(), device=device)
-                    #     if dist.get_rank() == 0:
-                    #         metric_main.report_metric(result_dict, run_dir=run_dir, snapshot_pkl=f'{fname}.png')                        
+        
+            gc.collect()
+            torch.cuda.empty_cache()
 
         # Save state checkpoint.
         if checkpoint_nimg is not None and (done or state.cur_nimg % checkpoint_nimg == 0) and state.cur_nimg != start_nimg:
