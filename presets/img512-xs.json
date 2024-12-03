@@ -7,6 +7,7 @@
         "label_dim": 0
     },
     "gamma": 0.414,
+    "g_lr_scaling": 0.01,
     "P_mean_sigma": 0.4, 
     "P_std_sigma": 2.0,
     "vsd_loss_kwargs": {
@@ -14,11 +15,11 @@
         "P_std": 2.0
     },
     "dsm_loss_kwargs": {
-        "P_mean": -0.8, 
-        "P_std": 1.6
+        "P_mean": -0.4, 
+        "P_std": 1.0
     },
     "lr_kwargs": {
-        "ref_lr": 0.0001,
+        "ref_lr": 0.0120,
         "ref_batches": 70000
     }
 }

@@ -127,7 +127,7 @@ def training_loop(
     dsm_loss_kwargs     = dict(class_name='training.training_loop.DSMLoss'),
     optimizer_kwargs    = dict(class_name='torch.optim.Adam', betas=(0.9, 0.99)),
     lr_kwargs           = dict(func_name='training.training_loop.learning_rate_schedule'),
-    ema_kwargs          = dict(class_name='training.phema.PowerFunctionEMA', stds=[0.010, 0.050, 0.100]),
+    ema_kwargs          = dict(class_name='training.phema.PowerFunctionEMA', stds=[0.050, 0.100]),
     P_mean_sigma        = 0.4,      # Mean of the LogNormal sampler of noise condition.
     P_std_sigma         = 2.0,      # Standard deviation of the LogNormal sampler of noise condition.
     gamma               = 0.414,    # TODO.
