@@ -149,10 +149,7 @@ def training_loop(
     loss_scaling        = 1,        # Loss scaling factor for reducing FP16 under/overflows.
     force_finite        = True,     # Get rid of NaN/Inf gradients before feeding them to the optimizer.
     cudnn_benchmark     = True,     # Enable torch.backends.cudnn.benchmark?
-    device              = torch.device('cuda'),
-    gradient_checkpoint = False,    # Use gradient checkpointing to save memory?
-
-    metrics             = ['fid50k_full'],
+    device              = torch.device('cuda')
 ):
     # Initialize.
     prev_status_time = time.time()
@@ -188,9 +185,6 @@ def training_loop(
     net = data['ema'].eval().requires_grad_(False).to(device)
     generator = PrecondCondition(**network_kwargs).init_from_pretrained(net).requires_grad_(True).to(device)
     score_model = PrecondCondition(**network_kwargs).init_from_pretrained(net).requires_grad_(True).to(device)
-    if gradient_checkpoint:
-        generator.enable_gradient_checkpointing()
-        score_model.enable_gradient_checkpointing()
     generator = GenerativeDenoiser(generator, gamma=gamma, init_sigma=init_sigma)
     ema_generator = dnnlib.util.construct_class_by_name(net=generator, **ema_kwargs) if ema_kwargs is not None else None
     
