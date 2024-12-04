@@ -130,9 +130,9 @@ def training_loop(
     data_loader_kwargs  = dict(class_name='torch.utils.data.DataLoader', pin_memory=True, num_workers=2, prefetch_factor=2),
     vsd_loss_kwargs     = dict(class_name='training.training_loop.NCVSDLoss'),
     dsm_loss_kwargs     = dict(class_name='training.training_loop.DSMLoss'),
-    optimizer_kwargs    = dict(class_name='torch.optim.Adam', betas=(0.9, 0.99)),
+    optimizer_kwargs    = dict(class_name='torch.optim.Adam'),
     lr_kwargs           = dict(func_name='training.training_loop.learning_rate_schedule'),
-    ema_kwargs          = dict(class_name='training.phema.PowerFunctionEMA', stds=[0.010, 0.050, 0.100]),
+    ema_kwargs          = dict(class_name='training.phema.PowerFunctionEMA'),
     P_mean_sigma        = 0.4,      # Mean of the LogNormal sampler of noise condition.
     P_std_sigma         = 2.0,      # Standard deviation of the LogNormal sampler of noise condition.
     gamma               = 0.414,    # TODO.
@@ -156,8 +156,6 @@ def training_loop(
     cudnn_benchmark     = True,     # Enable torch.backends.cudnn.benchmark?
     device              = torch.device('cuda'),
     gradient_checkpoint = False,    # Use gradient checkpointing to save memory?
-
-    metrics             = ['fid50k_full'],
 ):
     # Initialize.
     prev_status_time = time.time()
@@ -196,6 +194,8 @@ def training_loop(
     dist.print0('Constructing networks...')
     net = Precond(diffusion.alphas_cumprod, **network_kwargs)
     net = net.init_from_pretrained(unet).convert_to_fp16().eval().requires_grad_(False).to(device)
+    if gradient_checkpoint:
+        network_kwargs['use_checkpoint'] = True
     score_model = PrecondCondition(diffusion.alphas_cumprod, **network_kwargs).init_from_pretrained(unet).requires_grad_(True).to(device)
     generator = PrecondCondition(diffusion.alphas_cumprod, **network_kwargs).init_from_pretrained(unet).requires_grad_(True).to(device)
     generator = GenerativeDenoiser(generator, gamma=gamma, init_sigma=init_sigma)

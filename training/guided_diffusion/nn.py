@@ -133,7 +133,7 @@ def checkpoint(func, inputs, params, flag):
     :param flag: if False, disable gradient checkpointing.
     """
     if flag:
-        args = tuple(inputs) + tuple([param for param in params if param.requires_grad])
+        args = tuple(inputs) + tuple(params)
         return CheckpointFunction.apply(func, len(inputs), *args)
     else:
         return func(*inputs)
@@ -157,17 +157,13 @@ class CheckpointFunction(th.autograd.Function):
             # Tensor storage in place, which is not allowed for detach()'d
             # Tensors.
             shallow_copies = [x.view_as(x) for x in ctx.input_tensors]
-
-            # TODO: mixed precision support
-            with th.autocast(device_type=shallow_copies[0].device.type, dtype=th.float32):
-                output_tensors = ctx.run_function(*shallow_copies)
-            
+            output_tensors = ctx.run_function(*shallow_copies)
         input_grads = th.autograd.grad(
             output_tensors,
             ctx.input_tensors + ctx.input_params,
             output_grads,
             allow_unused=True,
-        )        
+        )
         del ctx.input_tensors
         del ctx.input_params
         del output_tensors
