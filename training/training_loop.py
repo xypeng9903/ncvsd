@@ -128,7 +128,7 @@ def training_loop(
     data_loader_kwargs  = dict(class_name='torch.utils.data.DataLoader', pin_memory=True, num_workers=2, prefetch_factor=2),
     vsd_loss_kwargs     = dict(class_name='training.training_loop.NCVSDLoss'),
     dsm_loss_kwargs     = dict(class_name='training.training_loop.DSMLoss'),
-    optimizer_kwargs    = dict(class_name='torch.optim.Adam', eps=1e-6),
+    optimizer_kwargs    = dict(class_name='torch.optim.Adam', betas=[0.9, 0.999], eps=1e-6),
     lr_kwargs           = dict(func_name='training.training_loop.learning_rate_schedule'),
     ema_kwargs          = dict(class_name='training.phema.PowerFunctionEMA'),
     P_mean_sigma        = 0.4,      # Mean of the LogNormal sampler of noise condition.
