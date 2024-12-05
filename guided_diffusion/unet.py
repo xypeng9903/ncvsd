@@ -467,13 +467,6 @@ class UNetModel(nn.Module):
         self.num_head_channels = num_head_channels
         self.num_heads_upsample = num_heads_upsample
 
-        self.dims = dims
-        self.use_fp16 = use_fp16
-        self.use_scale_shift_norm = use_scale_shift_norm
-        self.resblock_updown = resblock_updown
-        self.use_new_attention_order = use_new_attention_order
-        
-        
         time_embed_dim = model_channels * 4
         self.time_embed = nn.Sequential(
             linear(model_channels, time_embed_dim),
@@ -622,16 +615,6 @@ class UNetModel(nn.Module):
             zero_module(conv_nd(dims, input_ch, out_channels, 3, padding=1)),
         )
 
-    def enable_gradient_checkpointing(self):
-        for module in self.modules():
-            if hasattr(module, 'use_checkpoint'):
-                module.use_checkpoint = True
-                
-    def disable_gradient_checkpointing(self):
-        for module in self.modules():
-            if hasattr(module, 'use_checkpoint'):
-                module.use_checkpoint = False
-
     def convert_to_fp16(self):
         """
         Convert the torso of the model to float16.
@@ -639,7 +622,6 @@ class UNetModel(nn.Module):
         self.input_blocks.apply(convert_module_to_f16)
         self.middle_block.apply(convert_module_to_f16)
         self.output_blocks.apply(convert_module_to_f16)
-        self.out.apply(convert_module_to_f16)
 
     def convert_to_fp32(self):
         """
@@ -648,9 +630,8 @@ class UNetModel(nn.Module):
         self.input_blocks.apply(convert_module_to_f32)
         self.middle_block.apply(convert_module_to_f32)
         self.output_blocks.apply(convert_module_to_f32)
-        self.out.apply(convert_module_to_f32)
 
-    def forward(self, x, timesteps, y=None, additional_hs=None, additional_h=None):
+    def forward(self, x, timesteps, y=None):
         """
         Apply the model to an input batch.
 
@@ -659,14 +640,9 @@ class UNetModel(nn.Module):
         :param y: an [N] Tensor of labels, if class-conditional.
         :return: an [N x C x ...] Tensor of outputs.
         """
-        if y is not None and y.shape[-1] == 0:
-            y = None
-
         assert (y is not None) == (
             self.num_classes is not None
         ), "must specify y if and only if the model is class-conditional"
-
-        is_controlnet = additional_hs is not None and additional_h is not None
 
         hs = []
         emb = self.time_embed(timestep_embedding(timesteps, self.model_channels))
@@ -675,30 +651,15 @@ class UNetModel(nn.Module):
             assert y.shape == (x.shape[0],)
             emb = emb + self.label_emb(y)
 
-        # down
         h = x.type(self.dtype)
         for module in self.input_blocks:
             h = module(h, emb)
             hs.append(h)
-
-        if is_controlnet:
-            new_hs = []
-            for hs_sample, additional_hs_sample in zip(hs, additional_hs):
-                new_hs.append(hs_sample + additional_hs_sample)
-            hs = new_hs
-
-        # mid
         h = self.middle_block(h, emb)
-
-        if is_controlnet:
-            h = h + additional_h
-        
-        # up
         for module in self.output_blocks:
             h = th.cat([h, hs.pop()], dim=1)
             h = module(h, emb)
         h = h.type(x.dtype)
-
         return self.out(h)
 
 
@@ -931,238 +892,7 @@ class EncoderUNetModel(nn.Module):
         else:
             h = h.type(x.dtype)
             return self.out(h)
-
-
-class SuperResModel(UNetModel):
-    """
-    A UNetModel that performs super-resolution.
-
-    Expects an extra kwarg `low_res` to condition on a low-resolution image.
-    """
-
-    def __init__(self, image_size, in_channels, *args, **kwargs):
-        super().__init__(image_size, in_channels * 2, *args, **kwargs)
-
-    def forward(self, x, timesteps, low_res=None, **kwargs):
-        _, _, new_height, new_width = x.shape
-        upsampled = F.interpolate(low_res, (new_height, new_width), mode="bilinear")
-        x = th.cat([x, upsampled], dim=1)
-        return super().forward(x, timesteps, **kwargs)
-
-
-class EncoderUNetModel(nn.Module):
-    """
-    The half UNet model with attention and timestep embedding.
-
-    For usage, see UNet.
-    """
-
-    def __init__(
-        self,
-        image_size,
-        in_channels,
-        model_channels,
-        out_channels,
-        num_res_blocks,
-        attention_resolutions,
-        dropout=0,
-        channel_mult=(1, 2, 4, 8),
-        conv_resample=True,
-        dims=2,
-        use_checkpoint=False,
-        use_fp16=False,
-        num_heads=1,
-        num_head_channels=-1,
-        num_heads_upsample=-1,
-        use_scale_shift_norm=False,
-        resblock_updown=False,
-        use_new_attention_order=False,
-        pool="adaptive",
-    ):
-        super().__init__()
-
-        if num_heads_upsample == -1:
-            num_heads_upsample = num_heads
-
-        self.in_channels = in_channels
-        self.model_channels = model_channels
-        self.out_channels = out_channels
-        self.num_res_blocks = num_res_blocks
-        self.attention_resolutions = attention_resolutions
-        self.dropout = dropout
-        self.channel_mult = channel_mult
-        self.conv_resample = conv_resample
-        self.use_checkpoint = use_checkpoint
-        self.dtype = th.float16 if use_fp16 else th.float32
-        self.num_heads = num_heads
-        self.num_head_channels = num_head_channels
-        self.num_heads_upsample = num_heads_upsample
-
-        time_embed_dim = model_channels * 4
-        self.time_embed = nn.Sequential(
-            linear(model_channels, time_embed_dim),
-            nn.SiLU(),
-            linear(time_embed_dim, time_embed_dim),
-        )
-
-        ch = int(channel_mult[0] * model_channels)
-        self.input_blocks = nn.ModuleList(
-            [TimestepEmbedSequential(conv_nd(dims, in_channels, ch, 3, padding=1))]
-        )
-        self._feature_size = ch
-        input_block_chans = [ch]
-        ds = 1
-        for level, mult in enumerate(channel_mult):
-            for _ in range(num_res_blocks):
-                layers = [
-                    ResBlock(
-                        ch,
-                        time_embed_dim,
-                        dropout,
-                        out_channels=int(mult * model_channels),
-                        dims=dims,
-                        use_checkpoint=use_checkpoint,
-                        use_scale_shift_norm=use_scale_shift_norm,
-                    )
-                ]
-                ch = int(mult * model_channels)
-                if ds in attention_resolutions:
-                    layers.append(
-                        AttentionBlock(
-                            ch,
-                            use_checkpoint=use_checkpoint,
-                            num_heads=num_heads,
-                            num_head_channels=num_head_channels,
-                            use_new_attention_order=use_new_attention_order,
-                        )
-                    )
-                self.input_blocks.append(TimestepEmbedSequential(*layers))
-                self._feature_size += ch
-                input_block_chans.append(ch)
-            if level != len(channel_mult) - 1:
-                out_ch = ch
-                self.input_blocks.append(
-                    TimestepEmbedSequential(
-                        ResBlock(
-                            ch,
-                            time_embed_dim,
-                            dropout,
-                            out_channels=out_ch,
-                            dims=dims,
-                            use_checkpoint=use_checkpoint,
-                            use_scale_shift_norm=use_scale_shift_norm,
-                            down=True,
-                        )
-                        if resblock_updown
-                        else Downsample(
-                            ch, conv_resample, dims=dims, out_channels=out_ch
-                        )
-                    )
-                )
-                ch = out_ch
-                input_block_chans.append(ch)
-                ds *= 2
-                self._feature_size += ch
-
-        self.middle_block = TimestepEmbedSequential(
-            ResBlock(
-                ch,
-                time_embed_dim,
-                dropout,
-                dims=dims,
-                use_checkpoint=use_checkpoint,
-                use_scale_shift_norm=use_scale_shift_norm,
-            ),
-            AttentionBlock(
-                ch,
-                use_checkpoint=use_checkpoint,
-                num_heads=num_heads,
-                num_head_channels=num_head_channels,
-                use_new_attention_order=use_new_attention_order,
-            ),
-            ResBlock(
-                ch,
-                time_embed_dim,
-                dropout,
-                dims=dims,
-                use_checkpoint=use_checkpoint,
-                use_scale_shift_norm=use_scale_shift_norm,
-            ),
-        )
-        self._feature_size += ch
-        self.pool = pool
-        if pool == "adaptive":
-            self.out = nn.Sequential(
-                normalization(ch),
-                nn.SiLU(),
-                nn.AdaptiveAvgPool2d((1, 1)),
-                zero_module(conv_nd(dims, ch, out_channels, 1)),
-                nn.Flatten(),
-            )
-        elif pool == "attention":
-            assert num_head_channels != -1
-            self.out = nn.Sequential(
-                normalization(ch),
-                nn.SiLU(),
-                AttentionPool2d(
-                    (image_size // ds), ch, num_head_channels, out_channels
-                ),
-            )
-        elif pool == "spatial":
-            self.out = nn.Sequential(
-                nn.Linear(self._feature_size, 2048),
-                nn.ReLU(),
-                nn.Linear(2048, self.out_channels),
-            )
-        elif pool == "spatial_v2":
-            self.out = nn.Sequential(
-                nn.Linear(self._feature_size, 2048),
-                normalization(2048),
-                nn.SiLU(),
-                nn.Linear(2048, self.out_channels),
-            )
-        else:
-            raise NotImplementedError(f"Unexpected {pool} pooling")
-
-    def convert_to_fp16(self):
-        """
-        Convert the torso of the model to float16.
-        """
-        self.input_blocks.apply(convert_module_to_f16)
-        self.middle_block.apply(convert_module_to_f16)
-
-    def convert_to_fp32(self):
-        """
-        Convert the torso of the model to float32.
-        """
-        self.input_blocks.apply(convert_module_to_f32)
-        self.middle_block.apply(convert_module_to_f32)
-
-    def forward(self, x, timesteps):
-        """
-        Apply the model to an input batch.
-
-        :param x: an [N x C x ...] Tensor of inputs.
-        :param timesteps: a 1-D batch of timesteps.
-        :return: an [N x K] Tensor of outputs.
-        """
-        emb = self.time_embed(timestep_embedding(timesteps, self.model_channels))
-
-        results = []
-        h = x.type(self.dtype)
-        for module in self.input_blocks:
-            h = module(h, emb)
-            if self.pool.startswith("spatial"):
-                results.append(h.type(x.dtype).mean(dim=(2, 3)))
-        h = self.middle_block(h, emb)
-        if self.pool.startswith("spatial"):
-            results.append(h.type(x.dtype).mean(dim=(2, 3)))
-            h = th.cat(results, axis=-1)
-            return self.out(h)
-        else:
-            h = h.type(x.dtype)
-            return self.out(h)
-
+        
 
 
 #----------------------------------------------------------------------------
@@ -1685,12 +1415,12 @@ class Precond(th.nn.Module):
             self.unet.convert_to_fp16()
         self.unet_kwargs = unet_kwargs
 
-    def forward(self, x, sigma, class_labels=None, force_fp32=False, **unet_kwargs):
+    def forward(self, x, sigma, class_labels=None, force_fp32=False, **kwargs):
         dtype = th.float16 if (self.use_fp16 and not force_fp32 and x.device.type == 'cuda') else th.float32
         x = x.to(th.float32)
         sigma = sigma.to(th.float32).reshape(-1, 1, 1, 1)
         c_skip, c_out, c_in, c_noise = self.preconditioning(sigma)
-        x_in, c_noise = (c_in * x).to(dtype), c_noise.to(dtype)
+        x_in, c_noise = (c_in * x).to(dtype), c_noise.to(th.long)
         F_x = self.unet(x_in, c_noise, y=class_labels)
         if self.unet_kwargs['out_channels'] == 6:
             F_x = F_x.chunk(2, dim=1)[0]
@@ -1729,9 +1459,23 @@ class Precond(th.nn.Module):
         return self
     
     def convert_to_fp16(self):
-        self.unet.convert_to_fp16()
-        self.unet.dtype = th.float16
-        self.use_fp16 = True
+        self.apply(convert_module_to_f16)
+        def set_dtype(module):
+            if hasattr(module, 'dtype'):
+                module.dtype = th.float16
+            if hasattr(module, 'use_fp16'):
+                module.use_fp16 = True
+        self.apply(set_dtype)
+        return self
+    
+    def convert_to_fp32(self):
+        self.apply(convert_module_to_f32)
+        def set_dtype(module):
+            if hasattr(module, 'dtype'):
+                module.dtype = th.float32
+            if hasattr(module, 'use_fp16'):
+                module.use_fp16 = False
+        self.apply(set_dtype)
         return self
 
 
@@ -1767,7 +1511,7 @@ class PrecondCondition(th.nn.Module):
         )
         self.unet_kwargs = unet_kwargs
 
-    def forward(self, x, sigma, condition_x, condition_sigma, class_labels=None, force_fp32=False, return_logvar=False, **unet_kwargs):
+    def forward(self, x, sigma, condition_x, condition_sigma, class_labels=None, force_fp32=False, return_logvar=False, **kwargs):
         dtype = th.float16 if (self.use_fp16 and not force_fp32 and x.device.type == 'cuda') else th.float32
         
         # Controlnet forward.
@@ -1781,14 +1525,15 @@ class PrecondCondition(th.nn.Module):
         x = x.to(th.float32)
         sigma = sigma.to(th.float32).reshape(-1, 1, 1, 1)
         c_skip, c_out, c_in, c_noise = self.preconditioning(sigma)
-        x_in, c_noise = (c_in * x).to(dtype), c_noise.to(dtype)
-        h, hs = self.enc(x_in, c_noise, class_labels, **unet_kwargs)
+        x_in, c_noise = (c_in * x).to(dtype), c_noise.to(th.long)
+        h, hs = self.enc(x_in, c_noise, class_labels, **kwargs)
 
         # UNet decoder forward.
         F_x = self.dec(h, hs, c_noise, class_labels, additional_h=ctrl_h, additional_hs=ctrl_hs)
         if self.unet_kwargs['out_channels'] == 6:
             F_x = F_x.chunk(2, dim=1)[0]
         D_x = c_skip * x + c_out * F_x.to(th.float32)
+        D_x = D_x.clip(-1, 1)
 
         # Estimate uncertainty if requested.
         if return_logvar:
@@ -1827,6 +1572,26 @@ class PrecondCondition(th.nn.Module):
         self.enc.load_state_dict(unet.state_dict(), strict=False)
         self.dec.load_state_dict(unet.state_dict(), strict=False)
         self.ctrl.load_state_dict(unet.state_dict(), strict=False)
+        return self
+    
+    def convert_to_fp16(self):
+        self.apply(convert_module_to_f16)
+        def set_dtype(module):
+            if hasattr(module, 'dtype'):
+                module.dtype = th.float16
+            if hasattr(module, 'use_fp16'):
+                module.use_fp16 = True
+        self.apply(set_dtype)
+        return self
+    
+    def convert_to_fp32(self):
+        self.apply(convert_module_to_f32)
+        def set_dtype(module):
+            if hasattr(module, 'dtype'):
+                module.dtype = th.float32
+            if hasattr(module, 'use_fp16'):
+                module.use_fp16 = False
+        self.apply(set_dtype)
         return self
 
 

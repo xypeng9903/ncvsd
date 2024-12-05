@@ -22,8 +22,8 @@ from torch_utils import misc
 import gc
 from torchvision.utils import save_image
 
-from training.guided_diffusion.unet import Precond, PrecondCondition, GenerativeDenoiser
-from training.guided_diffusion.script_util import (
+from guided_diffusion.unet import Precond, PrecondCondition, GenerativeDenoiser
+from guided_diffusion.script_util import (
     model_and_diffusion_defaults,
     create_model_and_diffusion
 )
@@ -207,8 +207,7 @@ def training_loop(
     if dist.get_rank() == 0:
         misc.print_module_summary(net, [
             torch.zeros([batch_gpu, net.img_channels, net.img_resolution, net.img_resolution], device=device),
-            torch.ones([batch_gpu], device=device),
-            torch.zeros([batch_gpu, net.label_dim], device=device),
+            torch.ones([batch_gpu], device=device)
         ], max_nesting=2)
 
     # Setup training state.
@@ -324,10 +323,9 @@ def training_loop(
                     # Export sample images.
                     dist.print0(f'Exporting sample images for {fname}')
                     if dist.get_rank() == 0:
-                        c = torch.eye(bsz, ema_net.label_dim, device=device)
                         sigma = init_sigma * torch.ones(bsz, 1, 1, 1, device=device)
                         z = torch.randn(bsz, ema_net.img_channels, ema_net.img_resolution, ema_net.img_resolution, device=device) * sigma
-                        x = ema_net(z, sigma, c)
+                        x = ema_net(z, sigma)
                         x = encoder.decode(x).cpu()
                         save_image(x.float() / 255., os.path.join(run_dir, f'{fname}.png'), nrow=int(bsz ** 0.5))
                         del x
@@ -365,9 +363,8 @@ def training_loop(
                     score_model=ddp_score_model, 
                     x=x,
                     y=y, 
-                    sigma=sigma,
-                    labels=labels.to(device)
-                ).mean(dim=[1, 2, 3])
+                    sigma=sigma
+                )
                 dsm_loss.sum().mul(loss_scaling / batch_gpu_total).backward()
 
         # Run optimizer and update weights.
@@ -402,9 +399,8 @@ def training_loop(
                     x=x,
                     logvar=logvar,
                     y=y,
-                    sigma=sigma,
-                    labels=labels.to(device)
-                ).mean(dim=[1, 2, 3])
+                    sigma=sigma
+                )
                 vsd_loss.sum().mul(loss_scaling / batch_gpu_total).backward()
 
         # Run optimizer and update weights.
@@ -416,6 +412,9 @@ def training_loop(
                     torch.nan_to_num(param.grad, nan=0, posinf=0, neginf=0, out=param.grad)     
         
         g_optimizer.step()
+        for n, p in ddp_score_model.named_parameters():
+            if torch.isnan(p).any() or torch.isinf(p).any():
+                dist.print0(f'NaN or Inf in {n}')
                   
         # Update EMA and training state.
         state.cur_nimg += batch_size
