@@ -1407,14 +1407,12 @@ class UNetDecoder(nn.Module):
 class Precond(th.nn.Module):
     def __init__(self,
         alphas_cumprod,          # DDPM schedule.
-        quantize        = False, # Use quantized t-space?
         **unet_kwargs,           # Keyword arguments for UNet.
     ):
         super().__init__()
         sigmas = ((1 - alphas_cumprod) / alphas_cumprod) ** 0.5
         self.register_buffer('log_sigmas', th.log(th.tensor(sigmas)))
         self.use_fp16 = unet_kwargs.get('use_fp16', False)
-        self.quantize = quantize
         self.unet = UNetModel(**unet_kwargs)
         self.img_resolution = unet_kwargs['image_size']
         self.img_channels = unet_kwargs['in_channels']
@@ -1428,7 +1426,7 @@ class Precond(th.nn.Module):
         x = x.to(th.float32)
         sigma = sigma.to(th.float32).reshape(-1, 1, 1, 1)
         c_skip, c_out, c_in, c_noise = self.preconditioning(sigma)
-        x_in, c_noise = (c_in * x).to(dtype), c_noise.to(th.long)
+        x_in = (c_in * x).to(dtype)
         F_x = self.unet(x_in, c_noise, y=class_labels)
         if self.unet_kwargs['out_channels'] == 6:
             F_x = F_x.chunk(2, dim=1)[0]
@@ -1442,19 +1440,10 @@ class Precond(th.nn.Module):
         c_noise = self.sigma_to_t(sigma.view(-1))
         return c_skip, c_out, c_in, c_noise
     
-    def sigma_to_t(self, sigma, quantize=None):
-        quantize = self.quantize if quantize is None else quantize
+    def sigma_to_t(self, sigma):
         log_sigma = sigma.log()
         dists = log_sigma - self.log_sigmas[:, None]
-        if quantize:
-            return dists.abs().argmin(dim=0).view(sigma.shape)
-        low_idx = dists.ge(0).cumsum(dim=0).argmax(dim=0).clamp(max=self.log_sigmas.shape[0] - 2)
-        high_idx = low_idx + 1
-        low, high = self.log_sigmas[low_idx], self.log_sigmas[high_idx]
-        w = (low - log_sigma) / (low - high)
-        w = w.clamp(0, 1)
-        t = (1 - w) * low_idx + w * high_idx
-        return t.view(sigma.shape)
+        return dists.abs().argmin(dim=0).view(sigma.shape)
 
     def t_to_sigma(self, t):
         t = t.float()
@@ -1533,8 +1522,8 @@ class PrecondCondition(th.nn.Module):
         x = x.to(th.float32)
         sigma = sigma.to(th.float32).reshape(-1, 1, 1, 1)
         c_skip, c_out, c_in, c_noise = self.preconditioning(sigma)
-        x_in, c_noise = (c_in * x).to(dtype), c_noise.to(th.long)
-        h, hs = self.enc(x_in, c_noise, class_labels, **kwargs)
+        x_in = (c_in * x).to(dtype)
+        h, hs = self.enc(x_in, c_noise, class_labels)
 
         # UNet decoder forward.
         F_x = self.dec(h, hs, c_noise, class_labels, additional_h=ctrl_h, additional_hs=ctrl_hs)
@@ -1556,19 +1545,10 @@ class PrecondCondition(th.nn.Module):
         c_noise = self.sigma_to_t(sigma.view(-1))
         return c_skip, c_out, c_in, c_noise
     
-    def sigma_to_t(self, sigma, quantize=None):
-        quantize = self.quantize if quantize is None else quantize
+    def sigma_to_t(self, sigma):
         log_sigma = sigma.log()
         dists = log_sigma - self.log_sigmas[:, None]
-        if quantize:
-            return dists.abs().argmin(dim=0).view(sigma.shape)
-        low_idx = dists.ge(0).cumsum(dim=0).argmax(dim=0).clamp(max=self.log_sigmas.shape[0] - 2)
-        high_idx = low_idx + 1
-        low, high = self.log_sigmas[low_idx], self.log_sigmas[high_idx]
-        w = (low - log_sigma) / (low - high)
-        w = w.clamp(0, 1)
-        t = (1 - w) * low_idx + w * high_idx
-        return t.view(sigma.shape)
+        return dists.abs().argmin(dim=0).view(sigma.shape)
 
     def t_to_sigma(self, t):
         t = t.float()
