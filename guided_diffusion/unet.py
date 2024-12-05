@@ -659,7 +659,7 @@ class UNetModel(nn.Module):
         for module in self.output_blocks:
             h = th.cat([h, hs.pop()], dim=1)
             h = module(h, emb)
-        h = h.type(x.dtype)
+        h = h.type(th.float32)
         return self.out(h)
 
 
@@ -990,7 +990,6 @@ class UNetEncoder(nn.Module):
         if self.num_classes is not None:
             self.label_emb = nn.Embedding(num_classes, time_embed_dim)
 
-        self.controlnet_down_blocks = nn.ModuleList([])
         
         ch = input_ch = int(channel_mult[0] * model_channels)
         self.input_blocks = nn.ModuleList(
@@ -1002,6 +1001,7 @@ class UNetEncoder(nn.Module):
         
         # Add zero convolution for ControlNet
         if is_controlnet:
+            self.controlnet_down_blocks = nn.ModuleList([])
             controlnet_block = nn.Conv2d(ch, ch, kernel_size=1)
             controlnet_block = zero_module(controlnet_block)
             self.controlnet_down_blocks.append(controlnet_block)
@@ -1105,6 +1105,26 @@ class UNetEncoder(nn.Module):
             controlnet_block = zero_module(controlnet_block)
             self.controlnet_mid_block = controlnet_block
 
+    def convert_to_fp16(self):
+        """
+        Convert the torso of the model to float16.
+        """
+        self.input_blocks.apply(convert_module_to_f16)
+        self.middle_block.apply(convert_module_to_f16)
+        if self.is_controlnet:
+            self.controlnet_down_blocks.apply(convert_module_to_f16)
+            self.controlnet_mid_block.apply(convert_module_to_f16)
+
+    def convert_to_fp32(self):
+        """
+        Convert the torso of the model to float32.
+        """
+        self.input_blocks.apply(convert_module_to_f32)
+        self.middle_block.apply(convert_module_to_f32)
+        if self.is_controlnet:
+            self.controlnet_down_blocks.apply(convert_module_to_f32)
+            self.controlnet_mid_block.apply(convert_module_to_f32)
+
     def enable_gradient_checkpointing(self):
         for module in self.modules():
             if hasattr(module, 'use_checkpoint'):
@@ -1114,18 +1134,6 @@ class UNetEncoder(nn.Module):
         for module in self.modules():
             if hasattr(module, 'use_checkpoint'):
                 module.use_checkpoint = False
-
-    def convert_to_fp16(self):
-        """
-        Convert the torso of the model to float16.
-        """
-        self.apply(convert_module_to_f16)
-
-    def convert_to_fp32(self):
-        """
-        Convert the torso of the model to float32.
-        """
-        self.apply(convert_module_to_f32)
 
     def forward(self, x, timesteps, y=None):
         """
@@ -1332,6 +1340,18 @@ class UNetDecoder(nn.Module):
             zero_module(conv_nd(dims, input_ch, out_channels, 3, padding=1)),
         )
 
+    def convert_to_fp16(self):
+        """
+        Convert the torso of the model to float16.
+        """
+        self.output_blocks.apply(convert_module_to_f16)
+
+    def convert_to_fp32(self):
+        """
+        Convert the torso of the model to float32.
+        """
+        self.output_blocks.apply(convert_module_to_f32)
+
     def enable_gradient_checkpointing(self):
         for module in self.modules():
             if hasattr(module, 'use_checkpoint'):
@@ -1341,18 +1361,6 @@ class UNetDecoder(nn.Module):
         for module in self.modules():
             if hasattr(module, 'use_checkpoint'):
                 module.use_checkpoint = False
-
-    def convert_to_fp16(self):
-        """
-        Convert the torso of the model to float16.
-        """
-        self.apply(convert_module_to_f16)
-
-    def convert_to_fp32(self):
-        """
-        Convert the torso of the model to float32.
-        """
-        self.apply(convert_module_to_f32)
 
     def forward(self, h, hs, timesteps, y=None, additional_hs=None, additional_h=None):
         """
@@ -1388,7 +1396,7 @@ class UNetDecoder(nn.Module):
         for module in self.output_blocks:
             h = th.cat([h, hs.pop()], dim=1)
             h = module(h, emb)
-
+        h = h.type(th.float32)
         return self.out(h)
     
 
@@ -1459,7 +1467,7 @@ class Precond(th.nn.Module):
         return self
     
     def convert_to_fp16(self):
-        self.apply(convert_module_to_f16)
+        self.unet.convert_to_fp16()
         def set_dtype(module):
             if hasattr(module, 'dtype'):
                 module.dtype = th.float16
@@ -1469,7 +1477,7 @@ class Precond(th.nn.Module):
         return self
     
     def convert_to_fp32(self):
-        self.apply(convert_module_to_f32)
+        self.unet.convert_to_fp32()
         def set_dtype(module):
             if hasattr(module, 'dtype'):
                 module.dtype = th.float32
@@ -1575,7 +1583,9 @@ class PrecondCondition(th.nn.Module):
         return self
     
     def convert_to_fp16(self):
-        self.apply(convert_module_to_f16)
+        self.enc.convert_to_fp16()
+        self.dec.convert_to_fp16()
+        self.ctrl.convert_to_fp16()
         def set_dtype(module):
             if hasattr(module, 'dtype'):
                 module.dtype = th.float16

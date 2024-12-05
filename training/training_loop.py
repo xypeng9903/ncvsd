@@ -130,7 +130,7 @@ def training_loop(
     data_loader_kwargs  = dict(class_name='torch.utils.data.DataLoader', pin_memory=True, num_workers=2, prefetch_factor=2),
     vsd_loss_kwargs     = dict(class_name='training.training_loop.NCVSDLoss'),
     dsm_loss_kwargs     = dict(class_name='training.training_loop.DSMLoss'),
-    optimizer_kwargs    = dict(class_name='torch.optim.Adam'),
+    optimizer_kwargs    = dict(class_name='torch.optim.Adam', eps=1e-4),
     lr_kwargs           = dict(func_name='training.training_loop.learning_rate_schedule'),
     ema_kwargs          = dict(class_name='training.phema.PowerFunctionEMA'),
     P_mean_sigma        = 0.4,      # Mean of the LogNormal sampler of noise condition.
@@ -372,9 +372,9 @@ def training_loop(
         for g in s_optimizer.param_groups:
             g['lr'] = lr
             for param in g['params']:
+                param.grad.zero_()
                 if param.grad is not None and force_finite:
-                    torch.nan_to_num(param.grad, nan=0, posinf=0, neginf=0, out=param.grad)     
-        
+                    torch.nan_to_num(param.grad, nan=0, posinf=0, neginf=0, out=param.grad)             
         s_optimizer.step()
 
 
@@ -410,11 +410,7 @@ def training_loop(
             for param in g['params']:
                 if param.grad is not None and force_finite:
                     torch.nan_to_num(param.grad, nan=0, posinf=0, neginf=0, out=param.grad)     
-        
         g_optimizer.step()
-        for n, p in ddp_score_model.named_parameters():
-            if torch.isnan(p).any() or torch.isinf(p).any():
-                dist.print0(f'NaN or Inf in {n}')
                   
         # Update EMA and training state.
         state.cur_nimg += batch_size
