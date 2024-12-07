@@ -8,3 +8,4 @@ python generate_images.py \
     --net=$NET \
     --outdir="out/ffhq256" \
     --steps $STEPS \
+    --batch 1

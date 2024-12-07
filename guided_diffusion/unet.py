@@ -1483,14 +1483,12 @@ class PrecondCondition(th.nn.Module):
     def __init__(self,
         alphas_cumprod,          # DDPM schedule.
         logvar_channels = 128,   # Intermediate dimensionality for uncertainty estimation.
-        quantize        = False, # Use quantized t-space?
         **unet_kwargs,           # Keyword arguments for UNet.
     ):
         super().__init__()
         sigmas = ((1 - alphas_cumprod) / alphas_cumprod) ** 0.5
         self.register_buffer('log_sigmas', th.log(th.tensor(sigmas)))
         self.use_fp16 = unet_kwargs.get('use_fp16', False)
-        self.quantize = quantize
         self.enc = UNetEncoder(**unet_kwargs)
         self.dec = UNetDecoder(**unet_kwargs)
         self.ctrl = UNetEncoder(**unet_kwargs, is_controlnet=True)

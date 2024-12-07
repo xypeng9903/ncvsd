@@ -19,7 +19,7 @@ import PIL.Image
 import dnnlib
 from torch_utils import distributed as dist
 
-from training.guided_diffusion.unet import GenerativeDenoiser
+from guided_diffusion.unet import GenerativeDenoiser
 
 warnings.filterwarnings('ignore', '`resume_download` is deprecated')
 
@@ -28,10 +28,9 @@ warnings.filterwarnings('ignore', '`resume_download` is deprecated')
 # "Elucidating the Design Space of Diffusion-Based Generative Models",
 # extended to support classifier-free guidance.
 
-def ncvsd_sampler(net: GenerativeDenoiser, noise, labels=None, num_steps=2, init_sigma=80.0, dtype=torch.float32):
+def ncvsd_sampler(net: GenerativeDenoiser, noise, labels=None, num_steps=2, init_sigma=80.0):
     sigma = torch.ones(noise.shape[0], 1, 1, 1, device=noise.device) * init_sigma
     y = noise * init_sigma
-    net.to(dtype); y.to(dtype); sigma.to(dtype)
     net.set_timesteps(num_steps)
     with torch.no_grad():
         x = net(y, sigma, labels)
@@ -93,6 +92,9 @@ def generate_images(
             if encoder is None:
                 encoder = dnnlib.util.construct_class_by_name(class_name='training.encoders.StandardRGBEncoder')
     assert net is not None
+
+    net.to(torch.float32)
+    net.model.convert_to_fp16()
 
     # Load guidance network.
     if isinstance(gnet, str):
