@@ -27,10 +27,10 @@
         "resblock_updown": true,
         "use_new_attention_order": false
     },
-    "g_lr_scaling": 0.01,
+    "g_lr_scaling": 0.1,
     "gamma": 0.414,
-    "P_mean_sigma": 0.4, 
-    "P_std_sigma": 2.0,
+    "P_mean_sigma": -0.8, 
+    "P_std_sigma": 1.6,
     "vsd_loss_kwargs": {
         "P_mean": 0.4, 
         "P_std": 2.0
