@@ -232,6 +232,10 @@ def training_loop(
     dist.print0(f'Training from {state.cur_nimg // 1000} kimg to {stop_at_nimg // 1000} kimg:')
     dist.print0()
 
+    # Setup tensorboard.
+    if dist.get_rank() == 0:
+        writer = SummaryWriter(log_dir=run_dir)
+
     # Main training loop.
     dataset_sampler = misc.InfiniteSampler(dataset=dataset_obj, rank=dist.get_rank(), num_replicas=dist.get_world_size(), seed=seed, start_idx=state.cur_nimg)
     dataset_iterator = iter(dnnlib.util.construct_class_by_name(dataset=dataset_obj, sampler=dataset_sampler, batch_size=batch_gpu, **data_loader_kwargs))
@@ -239,7 +243,6 @@ def training_loop(
     cumulative_training_time = 0
     start_nimg = state.cur_nimg
     stats_jsonl = None
-    writer = SummaryWriter(log_dir=run_dir)
     while True:
         done = (state.cur_nimg >= stop_at_nimg)
 
