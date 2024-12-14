@@ -9,10 +9,10 @@
     "gamma": 0.414,
     "P_mean_sigma": -0.8, 
     "P_std_sigma": 1.6,
-    "g_lr_scaling": 0.01,
+    "g_lr_scaling": 0.05,
     "vsd_loss_kwargs": {
-        "P_mean": -0.8, 
-        "P_std": 1.6
+        "P_mean": -0.4, 
+        "P_std": 1.0
     },
     "dsm_loss_kwargs": {
         "P_mean": -0.8, 
