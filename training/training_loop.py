@@ -137,7 +137,7 @@ def training_loop(
     gamma               = 0.414,    # TODO.
     init_sigma          = 80.0,     # Maximum noise level.
     num_inference_steps = 2,        # Number of inference steps.
-    eval_batch_size     = 64,       # Batch size for evaluation.
+    eval_batch_size     = 8,        # Batch size for evaluation.
     g_lr_scaling        = 1,        # Learning rate scaling factor for the generator.
 
     run_dir             = '.',      # Output directory.
@@ -316,15 +316,13 @@ def training_loop(
                 if dist.get_rank() == 0:
                     dist.print0(f'Exporting sample images for {fname}')
                     with torch.no_grad():
-                        bsz = eval_batch_size
+                        num_samples = 64
                         ema_net.eval()
                         ema_net.set_timesteps(num_inference_steps)
-                        c = torch.eye(bsz, ema_net.label_dim, device=device)
-                        sigma = init_sigma * torch.ones(bsz, 1, 1, 1, device=device)
-                        z = torch.randn(bsz, ema_net.img_channels, ema_net.img_resolution, ema_net.img_resolution, device=device) * sigma
-                        x = ema_net(z, sigma)
+                        z = torch.randn(num_samples, ema_net.img_channels, ema_net.img_resolution, ema_net.img_resolution, device=device) * init_sigma
+                        x = torch.cat([ema_net(batch, init_sigma * torch.ones(batch.shape[0], 1, 1, 1, device=device)) for batch in z.split(eval_batch_size)])
                         x = encoder.decode(x).cpu()
-                        save_image(x.float() / 255., os.path.join(run_dir, f'{fname}.png'), nrow=int(bsz ** 0.5))
+                        save_image(x.float() / 255., os.path.join(run_dir, f'{fname}.png'), nrow=int(num_samples ** 0.5))
                         del x
         
             gc.collect()
