@@ -1431,7 +1431,7 @@ class Precond(th.nn.Module):
         if self.unet_kwargs['out_channels'] == 6:
             F_x = F_x.chunk(2, dim=1)[0]
         D_x = c_skip * x + c_out * F_x.to(th.float32)   
-        # D_x = D_x.clip(-1, 1)
+        D_x = D_x.clip(-1, 1)
         return D_x
     
     def preconditioning(self, sigma):
@@ -1529,7 +1529,7 @@ class PrecondCondition(th.nn.Module):
         if self.unet_kwargs['out_channels'] == 6:
             F_x = F_x.chunk(2, dim=1)[0]
         D_x = c_skip * x + c_out * F_x.to(th.float32)
-        # D_x = D_x.clip(-1, 1)
+        D_x = D_x.clip(-1, 1)
 
         # Estimate uncertainty if requested.
         if return_logvar:
