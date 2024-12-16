@@ -25,7 +25,7 @@ def normalize(x, dim=None, eps=1e-4):
         dim = list(range(1, x.ndim))
     norm = torch.linalg.vector_norm(x, dim=dim, keepdim=True, dtype=torch.float32)
     norm = torch.add(eps, norm, alpha=np.sqrt(norm.numel() / x.numel()))
-    return x / norm.detach().to(x.dtype) # TODO: will detach() effect performance?
+    return x / norm.to(x.dtype)
 
 #----------------------------------------------------------------------------
 # Upsample or downsample the given tensor with the given filter,
@@ -55,8 +55,10 @@ def mp_silu(x):
 #----------------------------------------------------------------------------
 # Magnitude-preserving sum (Equation 88).
 
+# def mp_sum(a, b, t=0.5):
+#     return a.lerp(b, t) / np.sqrt((1 - t) ** 2 + t ** 2)
 def mp_sum(a, b, t=0.5):
-    return a.lerp(b, t) / np.sqrt((1 - t) ** 2 + t ** 2)
+    return a.lerp(b, t) / ((1 - t) ** 2 + t ** 2) ** 0.5
 
 #----------------------------------------------------------------------------
 # Magnitude-preserving concatenation (Equation 103).
@@ -85,14 +87,6 @@ class MPFourier(torch.nn.Module):
         y = y + self.phases.to(torch.float32)
         y = y.cos() * np.sqrt(2)
         return y.to(x.dtype)
-    
-#------------------------------
-# Zero module
-
-def zero_module(module):
-    for p in module.parameters():
-        nn.init.zeros_(p)
-    return module
 
 #----------------------------------------------------------------------------
 # Magnitude-preserving convolution or fully-connected layer (Equation 47)
@@ -104,47 +98,8 @@ class MPConv(torch.nn.Module):
         super().__init__()
         self.out_channels = out_channels
         self.weight = torch.nn.Parameter(torch.randn(out_channels, in_channels, *kernel))
-        self._disable_adapters = True
-        self._active_adapter = None
-        self._adapter_names = []
 
-    def add_adapter(self, adapter_name: str, r: int, lora_alpha: int, lora_dropout: float = 0):
-        assert adapter_name not in self._adapter_names, f"Adapter {adapter_name} already exists"
-        if len(self._adapter_names) == 0:
-            self._adapter_names.append(adapter_name)
-            self.r = {}
-            self.lora_alpha = {}
-            self.scaling = {}
-            self.lora_dropout = nn.ModuleDict({})
-            self.lora_A = nn.ModuleDict({})
-            self.lora_B = nn.ModuleDict({})
-
-        self.r[adapter_name] = r
-        self.lora_alpha[adapter_name] = lora_alpha
-        if lora_dropout > 0.0:
-            lora_dropout_layer = nn.Dropout(p=lora_dropout)
-        else:
-            lora_dropout_layer = nn.Identity()
-
-        self.lora_dropout[adapter_name] = lora_dropout_layer
-
-        if self.weight.ndim == 2:
-            out_channels, in_channels = self.weight.shape
-            kernel = []
-        else:
-            out_channels, in_channels, *kernel = self.weight.shape
-        self.lora_A[adapter_name] = Conv(in_channels, r, kernel)
-        self.lora_B[adapter_name] = zero_module(Conv(r, out_channels, kernel))
-        self.scaling[adapter_name] = lora_alpha / r
-
-    def set_adapter(self, adapter_name):
-        self._active_adapter = adapter_name
-        self._disable_adapters = False
-
-    def disable_adapters(self):
-        self._disable_adapters = True
-
-    def _forward(self, x, gain=1):
+    def forward(self, x, gain=1):
         w = self.weight.to(torch.float32)
         if self.training:
             with torch.no_grad():
@@ -156,43 +111,7 @@ class MPConv(torch.nn.Module):
             return x @ w.t()
         assert w.ndim == 4
         return torch.nn.functional.conv2d(x, w, padding=(w.shape[-1]//2,))
-
-    def forward(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
-        if self._disable_adapters:
-            result = self._forward(x, *args, **kwargs)
-        else:
-            result = self._forward(x, *args, **kwargs)
-            torch_result_dtype = result.dtype
-            lora_A = self.lora_A[self._active_adapter]
-            lora_B = self.lora_B[self._active_adapter]
-            dropout = self.lora_dropout[self._active_adapter]
-            scaling = self.scaling[self._active_adapter]
-            x = x.to(lora_A.weight.dtype)
-            result = result + lora_B(lora_A(dropout(x))) * scaling
-            result = result.to(torch_result_dtype)
-        return result
-
-
-class Conv(torch.nn.Module):
-    def __init__(self, in_channels, out_channels, kernel):
-        super().__init__()
-        self.out_channels = out_channels
-        self.weight = torch.nn.Parameter(torch.randn(out_channels, in_channels, *kernel))
-
-    def forward(self, x, gain=1):
-        w = self.weight.to(torch.float32)
-        # if self.training:
-        #     with torch.no_grad():
-        #         self.weight.copy_(normalize(w)) # forced weight normalization
-        # w = normalize(w) # traditional weight normalization
-        # w = w * (gain / np.sqrt(w[0].numel())) # magnitude-preserving scaling
-        w = w.to(x.dtype)
-        if w.ndim == 2:
-            return x @ w.t()
-        assert w.ndim == 4
-        return torch.nn.functional.conv2d(x, w, padding=(w.shape[-1]//2,))
-    
-
+        
 #----------------------------------------------------------------------------
 # U-Net encoder/decoder block with optional self-attention (Figure 21).
 
@@ -402,7 +321,7 @@ class Precond(torch.nn.Module):
         return D_x
     
 #----------------------------------------------------------------------------
-# LoRA UNet encoder
+# UNet encoder
 
 @persistence.persistent_class
 class UNetEncoder(torch.nn.Module):
@@ -419,9 +338,6 @@ class UNetEncoder(torch.nn.Module):
         attn_resolutions    = [16,8],       # List of resolutions with self-attention.
         label_balance       = 0.5,          # Balance between noise embedding (0) and class embedding (1).
         concat_balance      = 0.5,          # Balance between skip connections (0) and main path (1).
-        is_controlnet       = False,        # If true, add zero convolutions
-        gradient_checkpoint = False,        # Use gradient checkpointing?
-        conditioning_channels = 0,          # Number of conditioning channels.
         **block_kwargs,                     # Arguments for Block.
     ):
         super().__init__()
@@ -430,8 +346,6 @@ class UNetEncoder(torch.nn.Module):
         cemb = model_channels * channel_mult_emb if channel_mult_emb is not None else max(cblock)
         self.label_balance = label_balance
         self.concat_balance = concat_balance
-        self.is_controlnet = is_controlnet
-        self.gradient_checkpoint = gradient_checkpoint
 
         # Embedding.
         self.emb_fourier = MPFourier(cnoise)
@@ -440,7 +354,6 @@ class UNetEncoder(torch.nn.Module):
 
         # Encoder.
         self.enc = torch.nn.ModuleDict()
-        self.controlnet_conv = torch.nn.ModuleDict() if is_controlnet else None
         cout = img_channels + 1
         for level, channels in enumerate(cblock):
             res = img_resolution >> level
@@ -448,23 +361,14 @@ class UNetEncoder(torch.nn.Module):
                 cin = cout
                 cout = channels
                 self.enc[f'{res}x{res}_conv'] = MPConv(cin, cout, kernel=[3,3])
-                self.emb_conditioning = MPConv(conditioning_channels, cout, kernel=[3,3]) if conditioning_channels != 0 else None
-                if self.emb_conditioning is not None:
-                    self.emb_conditioning.weight.data.zero_()
-                if is_controlnet:
-                    self.controlnet_conv[f'{res}x{res}_conv'] = zero_module(Conv(cout, cout, kernel=[1,1]))
             else:
                 self.enc[f'{res}x{res}_down'] = Block(cout, cout, cemb, flavor='enc', resample_mode='down', **block_kwargs)
-                if is_controlnet:
-                    self.controlnet_conv[f'{res}x{res}_down'] = zero_module(Conv(cout, cout, kernel=[1,1]))
             for idx in range(num_blocks):
                 cin = cout
                 cout = channels
                 self.enc[f'{res}x{res}_block{idx}'] = Block(cin, cout, cemb, flavor='enc', attention=(res in attn_resolutions), **block_kwargs)
-                if is_controlnet:
-                    self.controlnet_conv[f'{res}x{res}_block{idx}'] = zero_module(Conv(cout, cout, kernel=[1,1]))
 
-    def forward(self, x, noise_labels, class_labels, condition_labels=None):
+    def forward(self, x, noise_labels, class_labels):
         # Embedding.
         emb = self.emb_noise(self.emb_fourier(noise_labels))
         if self.emb_label is not None:
@@ -476,20 +380,14 @@ class UNetEncoder(torch.nn.Module):
         skips = []
         for name, block in self.enc.items():
             if 'conv' in name:
-                x = block(x) if self.emb_conditioning is None \
-                             else block(x) + self.emb_conditioning(condition_labels)
+                x = block(x)
             else: 
-                x = block(x, emb) if not self.gradient_checkpoint \
-                                  else checkpoint(block, x, emb, use_reentrant=True)
-            if self.controlnet_conv is not None:
-                skips.append(self.controlnet_conv[name](x))
-            else:
-                skips.append(x)
-        return x if self.controlnet_conv is None else skips[-1], skips
+                x = block(x, emb)
+            skips.append(x)
+        return x, skips
     
-
 #----------------------------------------------------------------------------
-# LoRA UNet decoder
+# UNet decoder
 
 @persistence.persistent_class
 class UNetDecoder(torch.nn.Module):
@@ -506,6 +404,7 @@ class UNetDecoder(torch.nn.Module):
         label_balance       = 0.5,          # Balance between noise embedding (0) and class embedding (1).
         concat_balance      = 0.5,          # Balance between skip connections (0) and main path (1).
         gradient_checkpoint = False,        # Use gradient checkpointing?
+        has_controlnet      = False,        # If true, add learnable mp_sum weight.
         **block_kwargs,                     # Arguments for Block.
     ):
         super().__init__()
@@ -538,6 +437,11 @@ class UNetDecoder(torch.nn.Module):
                 cout = channels
                 skips.append(cout)
 
+        # Learnable mp_sum weight.
+        if has_controlnet:
+            self.additional_x_weight = torch.nn.Parameter(torch.zeros(1))
+            self.additional_skips_weight = torch.nn.Parameter(torch.zeros(len(skips)))
+
         # Decoder.
         self.dec = torch.nn.ModuleDict()
         for level, channels in reversed(list(enumerate(cblock))):
@@ -560,163 +464,22 @@ class UNetDecoder(torch.nn.Module):
             emb = mp_sum(emb, self.emb_label(class_labels * np.sqrt(class_labels.shape[1])), t=self.label_balance)
         emb = mp_silu(emb)
 
-        # controlnet
+        # controlnet.
         if additional_x is not None:
-            x = x + additional_x
+            t = self.additional_x_weight.to(x.dtype)
+            x = mp_sum(x, additional_x, t=t)
         if additional_skips is not None:
-            skips = [skips[i] + additional_skips[i] for i in range(len(skips))]
+            t = self.additional_skips_weight.to(x.dtype)
+            skips = [mp_sum(skips[i], additional_skips[i], t=t[i]) for i in range(len(skips))]
 
         # Decoder.
         for name, block in self.dec.items():
             if 'block' in name:
                 x = mp_cat(x, skips.pop(), t=self.concat_balance)
-            x = block(x, emb) if not self.gradient_checkpoint \
-                              else checkpoint(block, x, emb, use_reentrant=True)
+            x = block(x, emb)
         x = self.out_conv(x, gain=self.out_gain)
         return x
     
-#----------------------------------------------------------------------------
-# Base adapter class
-
-class BaseAdapter:
-    
-    adapter_target_modules = (MPConv,)
-    
-    def __init__(self):
-        super().__init__()
-        self._disable_adapters = True
-        self._active_adapter = None
-        self._adapter_names = []
-
-    @property
-    def adapter_names(self):
-        return self._adapter_names
-
-    @property
-    def active_adapter(self):
-        return self._active_adapter
-    
-    def add_adapter(self, adapter_name: str, r: int, lora_alpha: int, lora_dropout: float = 0):
-        for name, module in self.named_modules():
-            if isinstance(module, self.adapter_target_modules):
-                module.add_adapter(adapter_name, r, lora_alpha, lora_dropout)
-
-    def set_adapter(self, adapter_name: str):
-        for name, module in self.named_modules():
-            if isinstance(module, self.adapter_target_modules):
-                module.set_adapter(adapter_name)
-        self._active_adapter = adapter_name
-
-    def disable_adapters(self):
-        for name, module in self.named_modules():
-            if isinstance(module, self.adapter_target_modules):
-                module.disable_adapters()
-        self._active_adapter = None
-
-#----------------------------------------------------------------------------
-# UNet encoder preconditioning 
-
-@persistence.persistent_class
-class PrecondUNetEncoder(torch.nn.Module, BaseAdapter):
-    def __init__(self,
-        img_resolution,         # Image resolution.
-        img_channels,           # Image channels.
-        label_dim,              # Class label dimensionality. 0 = unconditional.
-        use_fp16        = True, # Run the model at FP16 precision?
-        sigma_data      = 0.5,  # Expected standard deviation of the training data.
-        logvar_channels = 128,  # Intermediate dimensionality for uncertainty estimation.
-        **unet_kwargs,          # Keyword arguments for UNet.
-    ):
-        super().__init__()
-        self.img_resolution = img_resolution
-        self.img_channels = img_channels
-        self.label_dim = label_dim
-        self.use_fp16 = use_fp16
-        self.sigma_data = sigma_data
-        self.encoder = UNetEncoder(img_resolution=img_resolution, img_channels=img_channels, label_dim=label_dim, **unet_kwargs)
-        self.logvar_fourier = MPFourier(logvar_channels)
-
-    def forward(self, x, sigma, class_labels=None, force_fp32=False, **unet_kwargs):
-        x = x.to(torch.float32)
-        sigma = sigma.to(torch.float32).reshape(-1, 1, 1, 1)
-        class_labels = None if self.label_dim == 0 else torch.zeros([1, self.label_dim], device=x.device) if class_labels is None else class_labels.to(torch.float32).reshape(-1, self.label_dim)
-        dtype = torch.float16 if (self.use_fp16 and not force_fp32 and x.device.type == 'cuda') else torch.float32
-
-        # Preconditioning weights.
-        c_skip = self.sigma_data ** 2 / (sigma ** 2 + self.sigma_data ** 2)
-        c_out = sigma * self.sigma_data / (sigma ** 2 + self.sigma_data ** 2).sqrt()
-        c_in = 1 / (self.sigma_data ** 2 + sigma ** 2).sqrt()
-        c_noise = sigma.flatten().log() / 4
-
-        # Run the model.
-        x_in = (c_in * x).to(dtype)
-        x, skips = self.encoder(x_in, c_noise, class_labels, **unet_kwargs)
-        
-        return x, skips
-    
-    def init_from_pretrained(self, net: Precond):
-        unet = net.unet
-        self.encoder.load_state_dict(unet.state_dict(), strict=False)
-        return self
-
-    def enable_gradient_checkpointing(self):
-        self.encoder.gradient_checkpoint = True
-        
-#----------------------------------------------------------------------------
-# UNet decoder preconditioning 
-
-@persistence.persistent_class
-class PrecondUNetDecoder(torch.nn.Module, BaseAdapter):
-    def __init__(self,
-        img_resolution,         # Image resolution.
-        img_channels,           # Image channels.
-        label_dim,              # Class label dimensionality. 0 = unconditional.
-        use_fp16        = True, # Run the model at FP16 precision?
-        sigma_data      = 0.5,  # Expected standard deviation of the training data.
-        logvar_channels = 128,  # Intermediate dimensionality for uncertainty estimation.
-        **unet_kwargs,          # Keyword arguments for UNet.
-    ):
-        super().__init__()
-        self.img_resolution = img_resolution
-        self.img_channels = img_channels
-        self.label_dim = label_dim
-        self.use_fp16 = use_fp16
-        self.sigma_data = sigma_data
-        self.decoder = UNetDecoder(img_resolution=img_resolution, img_channels=img_channels, label_dim=label_dim, **unet_kwargs)
-        self.logvar_fourier = MPFourier(logvar_channels)
-        self.logvar_linear = MPConv(logvar_channels, 1, kernel=[])
-
-    def forward(self, x, enc_x, enc_skips, sigma, class_labels=None, force_fp32=False, return_logvar=False, **unet_kwargs):
-        x = x.to(torch.float32)
-        sigma = sigma.to(torch.float32).reshape(-1, 1, 1, 1)
-        class_labels = None if self.label_dim == 0 else torch.zeros([1, self.label_dim], device=x.device) if class_labels is None else class_labels.to(torch.float32).reshape(-1, self.label_dim)
-        dtype = torch.float16 if (self.use_fp16 and not force_fp32 and x.device.type == 'cuda') else torch.float32
-
-        # Preconditioning weights.
-        c_skip = self.sigma_data ** 2 / (sigma ** 2 + self.sigma_data ** 2)
-        c_out = sigma * self.sigma_data / (sigma ** 2 + self.sigma_data ** 2).sqrt()
-        c_in = 1 / (self.sigma_data ** 2 + sigma ** 2).sqrt()
-        c_noise = sigma.flatten().log() / 4
-
-        # Run the model.
-        F_x = self.decoder(enc_x, enc_skips, c_noise, class_labels, **unet_kwargs)
-        D_x = c_skip * x + c_out * F_x.to(torch.float32)
-
-        # Estimate uncertainty if requested.
-        if return_logvar:
-            logvar = self.logvar_linear(self.logvar_fourier(c_noise)).reshape(-1, 1, 1, 1)
-            return D_x, logvar # u(sigma) in Equation 21
-        return D_x
-    
-    def init_from_pretrained(self, net: Precond):
-        unet = net.unet
-        self.decoder.load_state_dict(unet.state_dict(), strict=False)
-        return self
-
-    def enable_gradient_checkpointing(self):
-        self.decoder.gradient_checkpoint = True
-
-
 #----------------------------------------------------------------------------
 # Condition UNet
 
@@ -737,9 +500,10 @@ class PrecondCondition(torch.nn.Module):
         self.label_dim = label_dim
         self.use_fp16 = use_fp16
         self.sigma_data = sigma_data
-        self.enc = UNetEncoder(img_resolution=img_resolution, img_channels=img_channels, label_dim=label_dim, **unet_kwargs)
-        self.dec = UNetDecoder(img_resolution=img_resolution, img_channels=img_channels, label_dim=label_dim, **unet_kwargs)
-        self.ctrl = UNetEncoder(img_resolution=img_resolution, img_channels=img_channels, label_dim=label_dim, is_controlnet=True, **unet_kwargs)
+        network_kwargs = dict(img_resolution=img_resolution, img_channels=img_channels, label_dim=label_dim, **unet_kwargs)
+        self.ctrl = UNetEncoder(**network_kwargs)
+        self.enc = UNetEncoder(**network_kwargs)
+        self.dec = UNetDecoder(**network_kwargs, has_controlnet=True)
         self.logvar_fourier = MPFourier(logvar_channels)
         self.logvar_linear = MPConv(logvar_channels, 1, kernel=[])
 
@@ -785,12 +549,6 @@ class PrecondCondition(torch.nn.Module):
         self.ctrl.load_state_dict(unet.state_dict(), strict=False)
         return self
     
-    def enable_gradient_checkpointing(self):
-        self.enc.gradient_checkpoint = True
-        self.dec.gradient_checkpoint = True
-        self.ctrl.gradient_checkpoint = True
-
-
 #----------------------------------------------------------------------------
 # Generative denoiser
 

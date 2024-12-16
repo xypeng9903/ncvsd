@@ -21,8 +21,7 @@ from torch_utils import persistence
 from torch_utils import misc
 import gc
 
-from .networks_edm2 import PrecondCondition, GenerativeDenoiser
-from metrics import di_metric_main as metric_main
+from training.networks_edm2 import PrecondCondition, GenerativeDenoiser
 from torchvision.utils import save_image
 
 
@@ -128,12 +127,14 @@ def training_loop(
     dsm_loss_kwargs     = dict(class_name='training.training_loop.DSMLoss'),
     optimizer_kwargs    = dict(class_name='torch.optim.Adam', betas=(0.9, 0.99)),
     lr_kwargs           = dict(func_name='training.training_loop.learning_rate_schedule'),
-    ema_kwargs          = dict(class_name='training.phema.PowerFunctionEMA'),
+    ema_kwargs          = dict(class_name='training.phema.PowerFunctionEMA', stds=[0.050, 0.100]),
     P_mean_sigma        = 0.4,      # Mean of the LogNormal sampler of noise condition.
     P_std_sigma         = 2.0,      # Standard deviation of the LogNormal sampler of noise condition.
     gamma               = 0.414,    # TODO.
     init_sigma          = 80.0,     # Maximum noise level.
-    num_inference_steps = 2,      # Number of inference steps.
+    num_inference_steps = 2,        # Number of inference steps.
+    eval_batch_size     = 64,       # Batch size for evaluation.
+    g_lr_scaling        = 1,        # Learning rate scaling factor for the generator.
 
     run_dir             = '.',      # Output directory.
     seed                = 0,        # Global random seed.
@@ -148,10 +149,7 @@ def training_loop(
     loss_scaling        = 1,        # Loss scaling factor for reducing FP16 under/overflows.
     force_finite        = True,     # Get rid of NaN/Inf gradients before feeding them to the optimizer.
     cudnn_benchmark     = True,     # Enable torch.backends.cudnn.benchmark?
-    device              = torch.device('cuda'),
-    gradient_checkpoint = False,    # Use gradient checkpointing to save memory?
-
-    metrics             = ['fid50k_full'],
+    device              = torch.device('cuda')
 ):
     # Initialize.
     prev_status_time = time.time()
@@ -187,9 +185,6 @@ def training_loop(
     net = data['ema'].eval().requires_grad_(False).to(device)
     generator = PrecondCondition(**network_kwargs).init_from_pretrained(net).requires_grad_(True).to(device)
     score_model = PrecondCondition(**network_kwargs).init_from_pretrained(net).requires_grad_(True).to(device)
-    if gradient_checkpoint:
-        generator.enable_gradient_checkpointing()
-        score_model.enable_gradient_checkpointing()
     generator = GenerativeDenoiser(generator, gamma=gamma, init_sigma=init_sigma)
     ema_generator = dnnlib.util.construct_class_by_name(net=generator, **ema_kwargs) if ema_kwargs is not None else None
     
@@ -245,10 +240,8 @@ def training_loop(
     stats_jsonl = None
     gc.collect()
     torch.cuda.empty_cache()
-    start_time = time.time()
     while True:
         done = (state.cur_nimg >= stop_at_nimg)
-
 
         #------------------------------------------------------------------------------------
         # Report status.
@@ -306,24 +299,24 @@ def training_loop(
                 del data # conserve memory
                     
                 with torch.no_grad():
+                    bsz = eval_batch_size
                     ema_net.eval()
                     ema_net.set_timesteps(num_inference_steps)
+
+                    # Export sample images.
                     dist.print0(f'Exporting sample images for {fname}')
                     bsz = 64
                     if dist.get_rank() == 0:
                         c = torch.eye(bsz, ema_net.label_dim, device=device)
-                        sigma = init_sigma * torch.ones(64, 1, 1, 1, device=device)
+                        sigma = init_sigma * torch.ones(bsz, 1, 1, 1, device=device)
                         z = torch.randn(bsz, ema_net.img_channels, ema_net.img_resolution, ema_net.img_resolution, device=device) * sigma
-                        images = ema_net(z, sigma, c)
-                        images = images.cpu()
-                        save_image(images, os.path.join(run_dir, f'{fname}.png'), nrow=int(bsz ** 0.5), normalize=True, value_range=(-1, 1))
-                        del images
-                    dist.print0(f'Evaluating metrics for {fname}')
-                    for metric in metrics:
-                        result_dict = metric_main.calc_metric(metric=metric, G=ema_net, init_sigma=init_sigma,
-                            dataset_kwargs=dataset_kwargs, num_gpus=dist.get_world_size(), rank=dist.get_rank(), device=device)
-                        if dist.get_rank() == 0:
-                            metric_main.report_metric(result_dict, run_dir=run_dir, snapshot_pkl=f'{fname}.png')                        
+                        x = ema_net(z, sigma, c)
+                        x = encoder.decode(x).cpu()
+                        save_image(x.float() / 255., os.path.join(run_dir, f'{fname}.png'), nrow=int(bsz ** 0.5))
+                        del x
+        
+            gc.collect()
+            torch.cuda.empty_cache()
 
         # Save state checkpoint.
         if checkpoint_nimg is not None and (done or state.cur_nimg % checkpoint_nimg == 0) and state.cur_nimg != start_nimg:
@@ -403,7 +396,7 @@ def training_loop(
         # Run optimizer and update weights.
         lr = dnnlib.util.call_func_by_name(cur_nimg=state.cur_nimg, batch_size=batch_size, **lr_kwargs)
         for g in g_optimizer.param_groups:
-            g['lr'] = lr
+            g['lr'] = lr * g_lr_scaling
             for param in g['params']:
                 if param.grad is not None and force_finite:
                     torch.nan_to_num(param.grad, nan=0, posinf=0, neginf=0, out=param.grad)     
@@ -422,8 +415,8 @@ def training_loop(
         progress = state.cur_nimg / total_nimg
         estimated_time = total_nimg * (1 - progress) / batch_size * batch_time
         dist.print0(
-            f'\rProgress: [{int(progress * 50) * "="}{(50 - int(progress * 50)) * " "}] {state.cur_nimg} / {total_nimg} ({progress * 100:.2f})%',
-            f'| estimated_time: {dnnlib.util.format_time(estimated_time)} | vsd_loss: {vsd_loss.mean().item():.4f} | dsm_loss: {dsm_loss.mean().item():.4f}', 
+            f'\rProgress: [{int(progress * 50) * "="}{(50 - int(progress * 50)) * " "}] {state.cur_nimg} / {total_nimg} ({progress * 100:.2f} %)',
+            f'| estimated_time: {dnnlib.util.format_time(estimated_time)} | lr: {lr:.2e} | vsd_loss: {vsd_loss.mean().item():.4f} | dsm_loss: {dsm_loss.mean().item():.4f}', 
             end='', flush=True
         )
 
