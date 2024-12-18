@@ -22,6 +22,7 @@ from torch_utils import misc
 import gc
 from torchvision.utils import save_image
 from torch.utils.tensorboard import SummaryWriter
+from diffusers import DDPMScheduler
 
 from guided_diffusion.unet import Precond, PrecondCondition, GenerativeDenoiser
 from guided_diffusion.script_util import (
@@ -31,18 +32,20 @@ from guided_diffusion.script_util import (
 
 
 #----------------------------------------------------------------------------
+# DDPM noise schedule.
+
+def ddpm_sigma_sampler(batch_size, device):
+    alpha_cumprod = DDPMScheduler().alphas_cumprod.to(device)
+    sigmas = (1 - alpha_cumprod) ** 0.5 / alpha_cumprod ** 0.5
+    idx = torch.randint(0, len(sigmas), [batch_size])
+    return sigmas[idx].view(-1, 1, 1, 1)
+
+#----------------------------------------------------------------------------
 # Noise conditional variational score distillation.
 
 @persistence.persistent_class
 class NCVSDLoss:
-    def __init__(
-        self, 
-        P_mean      = 0.4, 
-        P_std       = 2.0,
-        sigma_data  = 0.5
-    ):
-        self.P_mean = P_mean
-        self.P_std = P_std
+    def __init__(self, sigma_data=0.5):
         self.sigma_data = sigma_data
 
     def __call__(
@@ -57,8 +60,7 @@ class NCVSDLoss:
         x, logvar = generator(y, sigma, labels, return_logvar=True)
         
         with torch.no_grad():   
-            rnd_normal_t = torch.randn([y.shape[0], 1, 1, 1], device=y.device)
-            t = (rnd_normal_t * self.P_std + self.P_mean).exp()
+            t = ddpm_sigma_sampler(y.shape[0], y.device)
             weight_t = (t ** 2 + self.sigma_data ** 2) / (t * self.sigma_data) ** 2
             xt = x + torch.randn_like(x) * t
 
@@ -75,14 +77,7 @@ class NCVSDLoss:
 
 @persistence.persistent_class
 class DSMLoss:
-    def __init__(
-        self, 
-        P_mean        = -0.8, 
-        P_std         = 1.6,
-        sigma_data    = 0.5
-    ):
-        self.P_mean = P_mean
-        self.P_std = P_std
+    def __init__(self, sigma_data = 0.5):
         self.sigma_data = sigma_data
 
     def __call__(
@@ -96,8 +91,7 @@ class DSMLoss:
         with torch.no_grad():
             x = generator(y, sigma, labels)
 
-        rnd_normal_t = torch.randn([x.shape[0], 1, 1, 1], device=x.device)
-        t = (rnd_normal_t * self.P_std + self.P_mean).exp()
+        t = ddpm_sigma_sampler(y.shape[0], y.device)
         weight_t = (t ** 2 + self.sigma_data ** 2) / (t * self.sigma_data) ** 2
         xt = x + torch.randn_like(x) * t
 
@@ -132,8 +126,6 @@ def training_loop(
     optimizer_kwargs    = dict(class_name='torch.optim.Adam', betas=[0.9, 0.999], eps=1e-6),
     lr_kwargs           = dict(func_name='training.training_loop.learning_rate_schedule'),
     ema_kwargs          = dict(class_name='training.phema.PowerFunctionEMA', stds=[0.050, 0.100]),
-    P_mean_sigma        = 0.4,      # Mean of the LogNormal sampler of noise condition.
-    P_std_sigma         = 2.0,      # Standard deviation of the LogNormal sampler of noise condition.
     gamma               = 0.414,    # TODO.
     init_sigma          = 80.0,     # Maximum noise level.
     num_inference_steps = 2,        # Number of inference steps.
@@ -352,8 +344,7 @@ def training_loop(
                 images = encoder.encode_latents(images.to(device))
                 
                 # Noise condition.
-                rnd_normal_y = torch.randn([images.shape[0], 1, 1, 1], device=images.device)
-                sigma = (rnd_normal_y * P_std_sigma + P_mean_sigma).exp()
+                sigma = ddpm_sigma_sampler(images.shape[0], images.device)
                 y = images + torch.randn_like(images) * sigma
 
                 # Compute loss.
@@ -386,8 +377,7 @@ def training_loop(
                 images = encoder.encode_latents(images.to(device))
                 
                 # Noise condition.
-                rnd_normal_y = torch.randn([images.shape[0], 1, 1, 1], device=images.device)
-                sigma = (rnd_normal_y * P_std_sigma + P_mean_sigma).exp()
+                sigma =  ddpm_sigma_sampler(images.shape[0], images.device)
                 y = images + torch.randn_like(images) * sigma
                 
                 # Compute loss.
