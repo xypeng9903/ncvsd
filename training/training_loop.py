@@ -205,13 +205,13 @@ def training_loop(
     dist.print0('Setting up training state...')
     state = dnnlib.EasyDict(cur_nimg=0, total_elapsed_time=0)
 
-    # optimizer
-    g_optimizer = dnnlib.util.construct_class_by_name(params=generator.parameters(), **optimizer_kwargs)
-    s_optimizer = dnnlib.util.construct_class_by_name(params=score_model.parameters(), **optimizer_kwargs)
-    
     # ddp
-    ddp_generator = torch.nn.parallel.DistributedDataParallel(generator, device_ids=[device], broadcast_buffers=False, find_unused_parameters=False)
-    ddp_score_model = torch.nn.parallel.DistributedDataParallel(score_model, device_ids=[device], broadcast_buffers=False, find_unused_parameters=False)
+    ddp_generator = torch.nn.parallel.DistributedDataParallel(generator, device_ids=[device])
+    ddp_score_model = torch.nn.parallel.DistributedDataParallel(score_model, device_ids=[device])
+
+    # optimizer
+    g_optimizer = dnnlib.util.construct_class_by_name(params=ddp_generator.parameters(), **optimizer_kwargs)
+    s_optimizer = dnnlib.util.construct_class_by_name(params=ddp_score_model.parameters(), **optimizer_kwargs)
 
     # loss functions
     vsd_loss_fn = dnnlib.util.construct_class_by_name(**vsd_loss_kwargs)
@@ -413,6 +413,8 @@ def training_loop(
         dist.print0(
             f'\rProgress: {state.cur_nimg} / {total_nimg} ({progress * 100:.2f} %)',
             f'| Estimated time: {dnnlib.util.format_time(estimated_time)}',
+            f'| Loss/VSD: {vsd_loss.mean().item():.4f}',
+            f'| Loss/DSM: {dsm_loss.mean().item():.4f}',
             end='', flush=True
         )
         if dist.get_rank() == 0:
