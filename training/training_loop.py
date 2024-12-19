@@ -212,15 +212,15 @@ def training_loop(
     # Setup training state.
     dist.print0('Setting up training state...')
     state = dnnlib.EasyDict(cur_nimg=0, total_elapsed_time=0)
-
-    # optimizer
-    g_optimizer = dnnlib.util.construct_class_by_name(params=generator.parameters(), **optimizer_kwargs)
-    s_optimizer = dnnlib.util.construct_class_by_name(params=score_model.parameters(), **optimizer_kwargs)
     
     # ddp
     ddp_generator = torch.nn.parallel.DistributedDataParallel(generator, device_ids=[device], broadcast_buffers=False, find_unused_parameters=False)
     ddp_score_model = torch.nn.parallel.DistributedDataParallel(score_model, device_ids=[device], broadcast_buffers=False, find_unused_parameters=False)
 
+    # optimizer
+    g_optimizer = dnnlib.util.construct_class_by_name(params=generator.parameters(), **optimizer_kwargs)
+    s_optimizer = dnnlib.util.construct_class_by_name(params=score_model.parameters(), **optimizer_kwargs)
+    
     # loss functions
     vsd_loss_fn = dnnlib.util.construct_class_by_name(**vsd_loss_kwargs)
     dsm_loss_fn = dnnlib.util.construct_class_by_name(**dsm_loss_kwargs)
