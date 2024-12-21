@@ -80,7 +80,7 @@ class NCVSDLoss:
         return loss_vsd
 
 #----------------------------------------------------------------------------
-# Denoising score mathcing.
+# Denoising score matching.
 
 @persistence.persistent_class
 class DSMLoss:
@@ -140,25 +140,25 @@ def training_loop(
     optimizer_kwargs    = dict(class_name='torch.optim.Adam', betas=(0.9, 0.99)),
     lr_kwargs           = dict(func_name='training.training_loop.learning_rate_schedule'),
     ema_kwargs          = dict(class_name='training.phema.PowerFunctionEMA', stds=[0.050, 0.100]),
-    gamma               = 0.414,    # TODO.
-    init_sigma          = 80.0,     # Maximum noise level.
-    eval_ts             = [0,22,39],# inference steps for evaluation.
-    eval_batch_size     = 64,       # Batch size for evaluation.
-    g_lr_scaling        = 1,        # Learning rate scaling factor for the generator.
-
-    run_dir             = '.',      # Output directory.
-    seed                = 0,        # Global random seed.
-    batch_size          = 2048,     # Total batch size for one training iteration.
-    batch_gpu           = None,     # Limit batch size per GPU. None = no limit.
-    total_nimg          = 8<<30,    # Train for a total of N training images.
-    slice_nimg          = None,     # Train for a maximum of N training images in one invocation. None = no limit.
-    status_nimg         = 128<<10,  # Report status every N training images. None = disable.
-    snapshot_nimg       = 8<<20,    # Save network snapshot every N training images. None = disable.
-    checkpoint_nimg     = 128<<20,  # Save state checkpoint every N training images. None = disable.
-
-    loss_scaling        = 1,        # Loss scaling factor for reducing FP16 under/overflows.
-    force_finite        = True,     # Get rid of NaN/Inf gradients before feeding them to the optimizer.
-    cudnn_benchmark     = True,     # Enable torch.backends.cudnn.benchmark?
+    gamma               = 0.414,     # TODO.
+    init_sigma          = 80.0,      # Maximum noise level.
+    eval_ts             = [0,22,39], # inference steps for evaluation.
+    eval_batch_size     = 64,        # Batch size for evaluation.
+    g_lr_scaling        = 1,         # Learning rate scaling factor for the generator.
+ 
+    run_dir             = '.',       # Output directory.
+    seed                = 0,         # Global random seed.
+    batch_size          = 2048,      # Total batch size for one training iteration.
+    batch_gpu           = None,      # Limit batch size per GPU. None = no limit.
+    total_nimg          = 8<<30,     # Train for a total of N training images.
+    slice_nimg          = None,      # Train for a maximum of N training images in one invocation. None = no limit.
+    status_nimg         = 128<<10,   # Report status every N training images. None = disable.
+    snapshot_nimg       = 8<<20,     # Save network snapshot every N training images. None = disable.
+    checkpoint_nimg     = 128<<20,   # Save state checkpoint every N training images. None = disable.
+ 
+    loss_scaling        = 1,         # Loss scaling factor for reducing FP16 under/overflows.
+    force_finite        = True,      # Get rid of NaN/Inf gradients before feeding them to the optimizer.
+    cudnn_benchmark     = True,      # Enable torch.backends.cudnn.benchmark?
     device              = torch.device('cuda')
 ):
     # Initialize.
@@ -354,7 +354,7 @@ def training_loop(
         s_optimizer.step()
 
         #------------------------------------------------------------------------------------
-        # variational score distillation.
+        # Variational score distillation.
 
         ddp_generator.train()
         ddp_score_model.eval()
