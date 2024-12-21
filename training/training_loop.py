@@ -339,7 +339,7 @@ def training_loop(
             with misc.ddp_sync(ddp_score_model, (round_idx == num_accumulation_rounds - 1)):
                 images, labels = next(dataset_iterator)
                 images = encoder.encode_latents(images.to(device))
-                sigma = ddpm_sigma_sampler(images.shape[0], images.device)
+                sigma = karras_sigma_sampler(images.shape[0], images.device)
                 y = images + torch.randn_like(images) * sigma
                 dsm_loss = dsm_loss_fn(
                     generator=ddp_generator,
@@ -368,7 +368,7 @@ def training_loop(
             with misc.ddp_sync(ddp_generator, (round_idx == num_accumulation_rounds - 1)):
                 images, labels = next(dataset_iterator)
                 images = encoder.encode_latents(images.to(device))
-                sigma =  ddpm_sigma_sampler(images.shape[0], images.device)
+                sigma =  karras_sigma_sampler(images.shape[0], images.device)
                 y = images + torch.randn_like(images) * sigma
                 vsd_loss = vsd_loss_fn(
                     generator=ddp_generator,
