@@ -19,8 +19,8 @@
         "P_std": 1.6
     },
     "lr_kwargs": {
-        "ref_lr": 0.0010,
-        "ref_batches": 4000,
+        "ref_lr": 0.010,
+        "ref_batches": 3500,
         "rampup_Mimg": 0
     }
 }
