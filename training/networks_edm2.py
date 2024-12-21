@@ -463,10 +463,18 @@ class UNetDecoder(torch.nn.Module):
 
         # Controlnet.
         if additional_x is not None:
-            w = self.additional_x_weight.clip_(0, 1).to(x.dtype)
+            w = self.additional_x_weight.to(torch.float32)
+            if self.training:
+                with torch.no_grad():
+                    self.additional_x_weight.copy_(w.clip(0, 1)) # forced weight in [0, 1]
+            w = self.additional_x_weight.clip(0, 1).to(x.dtype)
             x = mp_sum(x, additional_x, t=w)
         if additional_skips is not None:
-            w = self.additional_skips_weight.clip_(0, 1).to(x.dtype)
+            w = self.additional_skips_weight.to(torch.float32)
+            if self.training:
+                with torch.no_grad():
+                    self.additional_skips_weight.copy_(w.clip(0, 1))
+            w = self.additional_skips_weight.clip(0, 1).to(x.dtype)
             skips = [mp_sum(skips[i], additional_skips[i], t=w[i]) for i in range(len(skips))]
 
         # Decoder.
