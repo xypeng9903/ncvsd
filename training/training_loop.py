@@ -19,12 +19,23 @@ from torch_utils import distributed as dist
 from torch_utils import training_stats
 from torch_utils import persistence
 from torch_utils import misc
-import gc
 
 from training.networks_edm2 import PrecondCondition, GenerativeDenoiser
 from torchvision.utils import save_image
 from torch.utils.tensorboard import SummaryWriter
 
+
+#----------------------------------------------------------------------------
+# Karras inference sigma sampler.
+
+def karras_sigma_sampler(batch_size, device, sigma_min=0.002, sigma_max=80.0, rho=7.0, steps=1000):
+    ramp = torch.linspace(0, 1, steps, device=device)
+    min_inv_rho = sigma_min ** (1 / rho)
+    max_inv_rho = sigma_max ** (1 / rho)
+    sigmas = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho
+    idx = torch.randint(0, steps, [batch_size])
+    sigma = sigmas[idx].view(-1, 1, 1, 1)
+    return sigma
 
 #----------------------------------------------------------------------------
 # Noise conditional variational score distillation.
@@ -129,11 +140,9 @@ def training_loop(
     optimizer_kwargs    = dict(class_name='torch.optim.Adam', betas=(0.9, 0.99)),
     lr_kwargs           = dict(func_name='training.training_loop.learning_rate_schedule'),
     ema_kwargs          = dict(class_name='training.phema.PowerFunctionEMA', stds=[0.050, 0.100]),
-    P_mean_sigma        = 0.4,      # Mean of the LogNormal sampler of noise condition.
-    P_std_sigma         = 2.0,      # Standard deviation of the LogNormal sampler of noise condition.
     gamma               = 0.414,    # TODO.
     init_sigma          = 80.0,     # Maximum noise level.
-    num_inference_steps = 2,        # Number of inference steps.
+    eval_ts             = [0,22,39],# inference steps for evaluation.
     eval_batch_size     = 64,       # Batch size for evaluation.
     g_lr_scaling        = 1,        # Learning rate scaling factor for the generator.
 
@@ -304,20 +313,14 @@ def training_loop(
                 if dist.get_rank() == 0:
                     dist.print0(f'Exporting sample images for {fname}')
                     with torch.no_grad():
-                        bsz = eval_batch_size
+                        num_samples = 64
                         ema_net.eval()
-                        ema_net.set_timesteps(num_inference_steps)
-                        c = torch.eye(bsz, ema_net.label_dim, device=device)
-                        sigma = init_sigma * torch.ones(bsz, 1, 1, 1, device=device)
-                        z = torch.randn(bsz, ema_net.img_channels, ema_net.img_resolution, ema_net.img_resolution, device=device) * sigma
-                        x = ema_net(z, sigma, c)
+                        z = torch.randn(num_samples, ema_net.img_channels, ema_net.img_resolution, ema_net.img_resolution, device=device) * init_sigma
+                        x = torch.cat([ema_net(batch, init_sigma * torch.ones(batch.shape[0], 1, 1, 1, device=device), ts=eval_ts) for batch in z.split(eval_batch_size)])
                         x = encoder.decode(x).cpu()
-                        save_image(x.float() / 255., os.path.join(run_dir, f'{fname}.png'), nrow=int(bsz ** 0.5))
+                        save_image(x.float() / 255., os.path.join(run_dir, f'{fname}.png'), nrow=int(num_samples ** 0.5))
                         del x
         
-            gc.collect()
-            torch.cuda.empty_cache()
-
         # Save state checkpoint.
         if checkpoint_nimg is not None and (done or state.cur_nimg % checkpoint_nimg == 0) and state.cur_nimg != start_nimg:
             checkpoint.save(os.path.join(run_dir, f'training-state-{state.cur_nimg//1000:07d}.pt'))
@@ -340,13 +343,8 @@ def training_loop(
             with misc.ddp_sync(ddp_score_model, (round_idx == num_accumulation_rounds - 1)):
                 images, labels = next(dataset_iterator)
                 images = encoder.encode_latents(images.to(device))
-                
-                # Noise condition.
-                rnd_normal_y = torch.randn([images.shape[0], 1, 1, 1], device=images.device)
-                sigma = (rnd_normal_y * P_std_sigma + P_mean_sigma).exp()
+                sigma = karras_sigma_sampler(images.shape[0], images.device)
                 y = images + torch.randn_like(images) * sigma
-
-                # Compute loss.
                 dsm_loss = dsm_loss_fn(
                     generator=ddp_generator,
                     score_model=ddp_score_model, 
@@ -375,13 +373,8 @@ def training_loop(
             with misc.ddp_sync(ddp_generator, (round_idx == num_accumulation_rounds - 1)):
                 images, labels = next(dataset_iterator)
                 images = encoder.encode_latents(images.to(device))
-                
-                # Noise condition.
-                rnd_normal_y = torch.randn([images.shape[0], 1, 1, 1], device=images.device)
-                sigma = (rnd_normal_y * P_std_sigma + P_mean_sigma).exp()
+                sigma = karras_sigma_sampler(images.shape[0], images.device)
                 y = images + torch.randn_like(images) * sigma
-                
-                # Compute loss.
                 vsd_loss = vsd_loss_fn(
                     generator=ddp_generator,
                     net=net,
