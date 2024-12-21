@@ -461,13 +461,13 @@ class UNetDecoder(torch.nn.Module):
             emb = mp_sum(emb, self.emb_label(class_labels * np.sqrt(class_labels.shape[1])), t=self.label_balance)
         emb = mp_silu(emb)
 
-        # controlnet.
+        # Controlnet.
         if additional_x is not None:
-            t = self.additional_x_weight.to(x.dtype)
-            x = mp_sum(x, additional_x, t=t)
+            w = self.additional_x_weight.clip_(0, 1).to(x.dtype)
+            x = mp_sum(x, additional_x, t=w)
         if additional_skips is not None:
-            t = self.additional_skips_weight.to(x.dtype)
-            skips = [mp_sum(skips[i], additional_skips[i], t=t[i]) for i in range(len(skips))]
+            w = self.additional_skips_weight.clip_(0, 1).to(x.dtype)
+            skips = [mp_sum(skips[i], additional_skips[i], t=w[i]) for i in range(len(skips))]
 
         # Decoder.
         for name, block in self.dec.items():
