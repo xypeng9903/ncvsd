@@ -55,6 +55,7 @@ def setup_training_config(preset: str, **opts):
         net=opts.net,
         gamma=preset['gamma'],
         g_lr_scaling=preset['g_lr_scaling'],
+        eval_ts=parse_int_list(opts.ts) if opts.ts else None,
     )
     c.pretrained_kwargs = dnnlib.EasyDict(**preset['pretrained_kwargs'])
     c.network_kwargs = dnnlib.EasyDict(**preset['network_kwargs'])
@@ -121,6 +122,23 @@ def parse_nimg(s):
     return int(s)
 
 #----------------------------------------------------------------------------
+# Parse a comma separated list of numbers or ranges and return a list of ints.
+# Example: '1,2,5-10' returns [1, 2, 5, 6, 7, 8, 9, 10]
+
+def parse_int_list(s):
+    if isinstance(s, list):
+        return s
+    ranges = []
+    range_re = re.compile(r'^(\d+)-(\d+)$')
+    for p in s.split(','):
+        m = range_re.match(p)
+        if m:
+            ranges.extend(range(int(m.group(1)), int(m.group(2))+1))
+        else:
+            ranges.append(int(p))
+    return ranges
+
+#----------------------------------------------------------------------------
 # Command line interface.
 
 @click.command()
@@ -131,6 +149,7 @@ def parse_nimg(s):
 @click.option('--data',             help='Path to the dataset', metavar='ZIP|DIR',              type=str, required=True)
 @click.option('--cond',             help='Train class-conditional model', metavar='BOOL',       type=bool, default=True, show_default=True)
 @click.option('--preset',           help='Configuration preset', metavar='STR',                 type=str, required=True)
+@click.option('--ts',               help='Inference steps for evaluation', metavar='DIR',       type=str, default=None)
 
 # Hyperparameters.
 @click.option('--duration',         help='Training duration', metavar='NIMG',                   type=parse_nimg, default=None)

@@ -4,7 +4,7 @@ BATCH_GPU=$2
 
 torchrun --standalone --nproc_per_node=$NUM_GPUS train_edm2.py \
     --preset="presets/ffhq256.json" \
-    --outdir="training-runs/ffhq256-fix-ddp" \
+    --outdir="training-runs/ffhq256" \
     --batch-gpu=$BATCH_GPU \
     --duration="16Mi" \
     --checkpoint="128Ki" \

@@ -140,8 +140,9 @@ def training_loop(
     ema_kwargs          = dict(class_name='training.phema.PowerFunctionEMA', stds=[0.050, 0.100]),
     gamma               = 0.414,     # TODO.
     init_sigma          = 80.0,      # Maximum noise level.
-    eval_ts             = [0,22,39], # inference steps for evaluation.
-    eval_batch_size     = 64,        # Batch size for evaluation.
+    eval_ts             = None,      # inference steps for evaluation. None = no evaluation.
+    num_eval_samples    = 64,        # Number of samples for evaluation.
+    eval_batch_size     = 8,         # Batch size for evaluation.
     g_lr_scaling        = 1,         # Learning rate scaling factor for the generator.
  
     run_dir             = '.',       # Output directory.
@@ -178,6 +179,7 @@ def training_loop(
     assert status_nimg is None or status_nimg % batch_size == 0
     assert snapshot_nimg is None or (snapshot_nimg % batch_size == 0 and snapshot_nimg % 1024 == 0)
     assert checkpoint_nimg is None or (checkpoint_nimg % batch_size == 0 and checkpoint_nimg % 1024 == 0)
+    assert num_eval_samples % int(num_eval_samples ** 0.5) == 0
 
     # Setup dataset.
     dist.print0('Loading dataset...')
@@ -302,17 +304,17 @@ def training_loop(
                     pickle.dump(data, f)
                 dist.print0('done')
                 del data # conserve memory
-                    
-                if dist.get_rank() == 0:
+                
+                # Export sample images.
+                if dist.get_rank() == 0 and eval_ts is not None:
                     dist.print0(f'Exporting sample images for {fname}')
                     with torch.no_grad():
-                        num_samples = 64
-                        assert num_samples % int(num_samples ** 0.5) == 0
                         ema_net.eval()
-                        z = torch.randn(num_samples, ema_net.img_channels, ema_net.img_resolution, ema_net.img_resolution, device=device) * init_sigma
-                        x = torch.cat([ema_net(batch, init_sigma * torch.ones(batch.shape[0], 1, 1, 1, device=device), ts=eval_ts) for batch in z.split(eval_batch_size)])
+                        z = torch.randn(num_eval_samples, ema_net.img_channels, ema_net.img_resolution, ema_net.img_resolution, device=device) * init_sigma
+                        x = torch.cat([ema_net(batch, init_sigma * torch.ones(batch.shape[0], 1, 1, 1, device=device), labels=batch_labels, ts=eval_ts) 
+                                       for batch in z.split(eval_batch_size)])
                         x = encoder.decode(x).cpu()
-                        save_image(x.float() / 255., os.path.join(run_dir, f'{fname}.png'), nrow=int(num_samples ** 0.5))
+                        save_image(x.float() / 255., os.path.join(run_dir, f'{fname}.png'), nrow=int(num_eval_samples ** 0.5))
                         del x
         
         # Save state checkpoint.
