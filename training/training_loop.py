@@ -311,7 +311,7 @@ def training_loop(
                     with torch.no_grad():
                         ema_net.eval()
                         z = torch.randn(num_eval_samples, ema_net.img_channels, ema_net.img_resolution, ema_net.img_resolution, device=device) * init_sigma
-                        x = torch.cat([ema_net(batch, init_sigma * torch.ones(batch.shape[0], 1, 1, 1, device=device), labels=batch_labels, ts=eval_ts) 
+                        x = torch.cat([ema_net(batch, init_sigma * torch.ones(batch.shape[0], 1, 1, 1, device=device), ts=eval_ts) 
                                        for batch in z.split(eval_batch_size)])
                         x = encoder.decode(x).cpu()
                         save_image(x.float() / 255., os.path.join(run_dir, f'{fname}.png'), nrow=int(num_eval_samples ** 0.5))

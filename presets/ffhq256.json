@@ -27,7 +27,7 @@
         "resblock_updown": true,
         "use_new_attention_order": false
     },
-    "g_lr_scaling": 0.05,
+    "g_lr_scaling": 0.01,
     "gamma": 0.414,
     "lr_kwargs": {
         "ref_lr": 1e-4,
