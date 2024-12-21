@@ -44,14 +44,12 @@ def karras_sigma_sampler(batch_size, device, sigma_min=0.002, sigma_max=80.0, rh
 class NCVSDLoss:
     def __init__(
         self, 
-        P_mean      = 0.4, 
-        P_std       = 2.0,
-        gamma       = 0.414,
+        P_mean      = -0.8, 
+        P_std       = 1.6,
         sigma_data  = 0.5
     ):
         self.P_mean = P_mean
         self.P_std = P_std
-        self.gamma = gamma
         self.sigma_data = sigma_data
 
     def __call__(
