@@ -1587,15 +1587,11 @@ class PrecondCondition(th.nn.Module):
 #----------------------------------------------------------------------------
 # Generative denoiser
 
-from diffusers import DDIMScheduler
-from tqdm import tqdm
-
 class GenerativeDenoiser(th.nn.Module):
     def __init__(self,
         model: PrecondCondition,
         gamma: float = 0.414,
         init_sigma: float = 80.0,
-        num_inference_steps: int = 1,
     ):
         super().__init__()
         self.model = model
@@ -1604,32 +1600,35 @@ class GenerativeDenoiser(th.nn.Module):
         self.label_dim = model.label_dim
         self.init_sigma = init_sigma
         self.gamma = gamma
-        self.num_inference_steps = num_inference_steps
         
-    def forward(self, y, sigma, labels=None, return_logvar=False, verbose=False, **kwargs):
-        if self.num_inference_steps == 1:
-            return self._forward(y, sigma, labels, return_logvar=return_logvar)
+    def forward(
+            self, 
+            y, 
+            sigma, 
+            labels        = None, 
+            return_logvar = False, 
+            ts            = None,
+            t_min         = 0.002,
+            t_max         = 80.0,
+            rho           = 7.0,
+            steps         = 40
+        ):
+        if ts is None:
+            return self._forward(y, sigma, labels, return_logvar=return_logvar) 
+  
+        assert return_logvar == False, 'return_logvar is not supported for multistep inference'
         
-        assert return_logvar == False, 'return_logvar is not supported for num_inference_steps > 1'
+        t_max_rho = t_max ** (1 / rho)
+        t_min_rho = t_min ** (1 / rho)
         
-        scheduler = DDIMScheduler()
-        scheduler.set_timesteps(self.num_inference_steps)
-        alphas = scheduler.alphas_cumprod
-        tmax = th.ones([y.shape[0], 1, 1, 1], device=y.device) * self.init_sigma
-        
-        # sampling loop
-        xt = th.randn_like(y) * tmax
-        x0 = self._forward(xt, tmax, labels, return_logvar=False)
-        xt = scheduler.add_noise(x0, th.randn_like(x0), scheduler.timesteps[0])
-        progress_bar = tqdm(scheduler.timesteps[:-1], disable=not verbose)
-        for i in progress_bar:
-            s, s_t = alphas[i] ** 0.5, (1 - alphas[i]) ** 0.5
-            t = th.tensor([s_t / s], device=y.device).view(-1, 1, 1, 1)
+        xt = th.randn_like(y) * (t_max_rho + ts[0] / (steps - 1) * (t_min_rho - t_max_rho)) ** rho
+        for i in range(len(ts) - 1):
+            t = (t_max_rho + ts[i] / (steps - 1) * (t_min_rho - t_max_rho)) ** rho
             sigma_eff = 1 / (1 / sigma ** 2 + 1 / t ** 2) ** 0.5
-            y_eff = (y / sigma ** 2 + (xt / s) / t ** 2) * sigma_eff ** 2
+            y_eff = (y / sigma ** 2 + xt / t ** 2) * sigma_eff ** 2
             x0 = self._forward(y_eff, sigma_eff, labels)
-            eps_hat = (xt - s * x0) / s_t
-            xt = scheduler.step(eps_hat, i, xt).prev_sample
+            next_t = (t_max_rho + ts[i + 1] / (steps - 1) * (t_min_rho - t_max_rho)) ** rho
+            xt = x0 + th.randn_like(x0) * next_t
 
         return x0
 
@@ -1638,6 +1637,3 @@ class GenerativeDenoiser(th.nn.Module):
         sigma_hat = sigma * (1 + self.gamma)
         y_hat = y + z * (sigma_hat ** 2 - sigma ** 2) ** 0.5
         return self.model(y_hat, sigma_hat, y, sigma, labels, return_logvar=return_logvar)
-    
-    def set_timesteps(self, num_inference_steps: int):
-        self.num_inference_steps = num_inference_steps

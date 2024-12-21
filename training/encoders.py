@@ -134,19 +134,21 @@ class StabilityVAEEncoder(Encoder):
 #----------------------------------------------------------------------------
 
 def load_stability_vae(vae_name='stabilityai/sd-vae-ft-mse', device=torch.device('cpu')):
-    import dnnlib
-    cache_dir = dnnlib.make_cache_dir_path('diffusers')
-    os.environ['HF_HUB_DISABLE_SYMLINKS_WARNING'] = '1'
-    os.environ['HF_HUB_DISABLE_PROGRESS_BARS'] = '1'
-    os.environ['HF_HOME'] = cache_dir
+    # import dnnlib
+    # cache_dir = dnnlib.make_cache_dir_path('diffusers')
+    # os.environ['HF_HUB_DISABLE_SYMLINKS_WARNING'] = '1'
+    # os.environ['HF_HUB_DISABLE_PROGRESS_BARS'] = '1'
+    # os.environ['HF_HOME'] = cache_dir
 
-    import diffusers # pip install diffusers # pyright: ignore [reportMissingImports]
-    try:
-        # First try with local_files_only to avoid consulting tfhub metadata if the model is already in cache.
-        vae = diffusers.models.AutoencoderKL.from_pretrained(vae_name, cache_dir=cache_dir, local_files_only=True)
-    except:
-        # Could not load the model from cache; try without local_files_only.
-        vae = diffusers.models.AutoencoderKL.from_pretrained(vae_name, cache_dir=cache_dir)
+    # import diffusers # pip install diffusers # pyright: ignore [reportMissingImports]
+    # try:
+    #     # First try with local_files_only to avoid consulting tfhub metadata if the model is already in cache.
+    #     vae = diffusers.models.AutoencoderKL.from_pretrained(vae_name, cache_dir=cache_dir, local_files_only=True)
+    # except:
+    #     # Could not load the model from cache; try without local_files_only.
+    #     vae = diffusers.models.AutoencoderKL.from_pretrained(vae_name, cache_dir=cache_dir)
+    import diffusers
+    vae = diffusers.models.AutoencoderKL.from_pretrained(vae_name)
     return vae.eval().requires_grad_(False).to(device)
 
 #----------------------------------------------------------------------------
