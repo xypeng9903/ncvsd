@@ -53,8 +53,6 @@ def setup_training_config(preset: str, **opts):
         total_nimg=opts.duration, 
         batch_size=opts.batch, 
         net=opts.net,
-        P_mean_sigma=preset['P_mean_sigma'],
-        P_std_sigma=preset['P_std_sigma'],
         gamma=preset['gamma'],
         g_lr_scaling=preset['g_lr_scaling'],
     )
