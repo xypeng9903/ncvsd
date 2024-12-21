@@ -198,27 +198,15 @@ def training_loop(
     generator = GenerativeDenoiser(generator, gamma=gamma, init_sigma=init_sigma)
     ema_generator = dnnlib.util.construct_class_by_name(net=generator, **ema_kwargs) if ema_kwargs is not None else None
     
-    # Print network summary.
-    if dist.get_rank() == 0:
-        misc.print_module_summary(net, [
-            torch.zeros([batch_gpu, net.img_channels, net.img_resolution, net.img_resolution], device=device),
-            torch.ones([batch_gpu], device=device),
-            torch.zeros([batch_gpu, net.label_dim], device=device),
-        ], max_nesting=2)
+    # TODO: Print network summary.
 
     # Setup training state.
     dist.print0('Setting up training state...')
     state = dnnlib.EasyDict(cur_nimg=0, total_elapsed_time=0)
-
-    # ddp
     ddp_generator = torch.nn.parallel.DistributedDataParallel(generator, device_ids=[device])
     ddp_score_model = torch.nn.parallel.DistributedDataParallel(score_model, device_ids=[device])
-
-    # optimizer
     g_optimizer = dnnlib.util.construct_class_by_name(params=ddp_generator.parameters(), **optimizer_kwargs)
     s_optimizer = dnnlib.util.construct_class_by_name(params=ddp_score_model.parameters(), **optimizer_kwargs)
-
-    # loss functions
     vsd_loss_fn = dnnlib.util.construct_class_by_name(**vsd_loss_kwargs)
     dsm_loss_fn = dnnlib.util.construct_class_by_name(**dsm_loss_kwargs)
     
