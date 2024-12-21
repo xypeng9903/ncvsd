@@ -7,19 +7,20 @@
         "label_dim": 1000
     },
     "gamma": 0.414,
-    "P_mean_sigma": 0.4, 
-    "P_std_sigma": 2.0,
-    "g_lr_scaling": 0.01,
+    "P_mean_sigma": -0.8, 
+    "P_std_sigma": 1.6,
+    "g_lr_scaling": 0.1,
     "vsd_loss_kwargs": {
-        "P_mean": 0.4, 
-        "P_std": 2.0
+        "P_mean": -0.8, 
+        "P_std": 1.6
     },
     "dsm_loss_kwargs": {
         "P_mean": -0.8, 
         "P_std": 1.6
     },
     "lr_kwargs": {
-        "ref_lr": 0.0100,
-        "ref_batches": 35000
+        "ref_lr": 0.010,
+        "ref_batches": 3500,
+        "rampup_Mimg": 0
     }
 }

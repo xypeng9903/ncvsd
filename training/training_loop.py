@@ -23,6 +23,7 @@ import gc
 
 from training.networks_edm2 import PrecondCondition, GenerativeDenoiser
 from torchvision.utils import save_image
+from torch.utils.tensorboard import SummaryWriter
 
 
 #----------------------------------------------------------------------------
@@ -44,28 +45,26 @@ class NCVSDLoss:
 
     def __call__(
             self, 
+            generator,
             net,
-            score_model,
-            x: torch.Tensor, 
-            logvar: torch.Tensor,
+            score_model, 
             y: torch.Tensor, 
             sigma: torch.Tensor,
             labels: torch.Tensor = None
     ):        
+        x, logvar = generator(y, sigma, labels, return_logvar=True)
+        
         with torch.no_grad():   
-            # diffuse
             rnd_normal_t = torch.randn([y.shape[0], 1, 1, 1], device=y.device)
             t = (rnd_normal_t * self.P_std + self.P_mean).exp()
             weight_t = (t ** 2 + self.sigma_data ** 2) / (t * self.sigma_data) ** 2
             xt = x + torch.randn_like(x) * t
 
-            # score prediction
             sigma_eff = 1 / (1 / sigma ** 2 + 1 / t ** 2) ** 0.5
             y_eff = (y / sigma ** 2 + xt / t ** 2) * sigma_eff ** 2
             s0 = net(y_eff, sigma_eff, labels)
             s = score_model(xt, t, y, sigma, labels)
 
-        # variational score distillation
         loss_vsd = (weight_t / logvar.exp()) * (x - (s0 - s + x).detach()) ** 2 + logvar
         return loss_vsd
 
@@ -86,13 +85,15 @@ class DSMLoss:
 
     def __call__(
             self, 
+            generator,
             score_model,
-            x: torch.Tensor, 
             y: torch.Tensor, 
             sigma: torch.Tensor,
             labels: torch.Tensor = None
-    ):
-        # diffuse
+    ): 
+        with torch.no_grad():
+            x = generator(y, sigma, labels)
+
         rnd_normal_t = torch.randn([x.shape[0], 1, 1, 1], device=x.device)
         t = (rnd_normal_t * self.P_std + self.P_mean).exp()
         weight_t = (t ** 2 + self.sigma_data ** 2) / (t * self.sigma_data) ** 2
@@ -200,13 +201,13 @@ def training_loop(
     dist.print0('Setting up training state...')
     state = dnnlib.EasyDict(cur_nimg=0, total_elapsed_time=0)
 
-    # optimizer
-    g_optimizer = dnnlib.util.construct_class_by_name(params=generator.parameters(), **optimizer_kwargs)
-    s_optimizer = dnnlib.util.construct_class_by_name(params=score_model.parameters(), **optimizer_kwargs)
-    
     # ddp
-    ddp_generator = torch.nn.parallel.DistributedDataParallel(generator, device_ids=[device], broadcast_buffers=False, find_unused_parameters=False)
-    ddp_score_model = torch.nn.parallel.DistributedDataParallel(score_model, device_ids=[device], broadcast_buffers=False, find_unused_parameters=False)
+    ddp_generator = torch.nn.parallel.DistributedDataParallel(generator, device_ids=[device])
+    ddp_score_model = torch.nn.parallel.DistributedDataParallel(score_model, device_ids=[device])
+
+    # optimizer
+    g_optimizer = dnnlib.util.construct_class_by_name(params=ddp_generator.parameters(), **optimizer_kwargs)
+    s_optimizer = dnnlib.util.construct_class_by_name(params=ddp_score_model.parameters(), **optimizer_kwargs)
 
     # loss functions
     vsd_loss_fn = dnnlib.util.construct_class_by_name(**vsd_loss_kwargs)
@@ -231,6 +232,10 @@ def training_loop(
     dist.print0(f'Training from {state.cur_nimg // 1000} kimg to {stop_at_nimg // 1000} kimg:')
     dist.print0()
 
+    # Setup tensorboard.
+    if dist.get_rank() == 0:
+        writer = SummaryWriter(log_dir=run_dir)
+
     # Main training loop.
     dataset_sampler = misc.InfiniteSampler(dataset=dataset_obj, rank=dist.get_rank(), num_replicas=dist.get_world_size(), seed=seed, start_idx=state.cur_nimg)
     dataset_iterator = iter(dnnlib.util.construct_class_by_name(dataset=dataset_obj, sampler=dataset_sampler, batch_size=batch_gpu, **data_loader_kwargs))
@@ -238,8 +243,6 @@ def training_loop(
     cumulative_training_time = 0
     start_nimg = state.cur_nimg
     stats_jsonl = None
-    gc.collect()
-    torch.cuda.empty_cache()
     while True:
         done = (state.cur_nimg >= stop_at_nimg)
 
@@ -298,15 +301,12 @@ def training_loop(
                 dist.print0('done')
                 del data # conserve memory
                     
-                with torch.no_grad():
-                    bsz = eval_batch_size
-                    ema_net.eval()
-                    ema_net.set_timesteps(num_inference_steps)
-
-                    # Export sample images.
+                if dist.get_rank() == 0:
                     dist.print0(f'Exporting sample images for {fname}')
-                    bsz = 64
-                    if dist.get_rank() == 0:
+                    with torch.no_grad():
+                        bsz = eval_batch_size
+                        ema_net.eval()
+                        ema_net.set_timesteps(num_inference_steps)
                         c = torch.eye(bsz, ema_net.label_dim, device=device)
                         sigma = init_sigma * torch.ones(bsz, 1, 1, 1, device=device)
                         z = torch.randn(bsz, ema_net.img_channels, ema_net.img_resolution, ema_net.img_resolution, device=device) * sigma
@@ -330,26 +330,26 @@ def training_loop(
         batch_start_time = time.time()
         misc.set_random_seed(seed, dist.get_rank(), state.cur_nimg)
 
-
         #------------------------------------------------------------------------------------
         # Denoising score matching.
 
+        ddp_generator.eval()
+        ddp_score_model.train()
         s_optimizer.zero_grad(set_to_none=True)
         for round_idx in range(num_accumulation_rounds):
             with misc.ddp_sync(ddp_score_model, (round_idx == num_accumulation_rounds - 1)):
                 images, labels = next(dataset_iterator)
                 images = encoder.encode_latents(images.to(device))
+                
+                # Noise condition.
                 rnd_normal_y = torch.randn([images.shape[0], 1, 1, 1], device=images.device)
                 sigma = (rnd_normal_y * P_std_sigma + P_mean_sigma).exp()
                 y = images + torch.randn_like(images) * sigma
 
-                with torch.no_grad():
-                    ddp_generator.eval()
-                    x = ddp_generator(y, sigma, labels)
-                ddp_score_model.train()
+                # Compute loss.
                 dsm_loss = dsm_loss_fn(
+                    generator=ddp_generator,
                     score_model=ddp_score_model, 
-                    x=x,
                     y=y, 
                     sigma=sigma,
                     labels=labels.to(device)
@@ -363,30 +363,29 @@ def training_loop(
             for param in g['params']:
                 if param.grad is not None and force_finite:
                     torch.nan_to_num(param.grad, nan=0, posinf=0, neginf=0, out=param.grad)     
-        
         s_optimizer.step()
-
 
         #------------------------------------------------------------------------------------
         # variational score distillation.
 
+        ddp_generator.train()
+        ddp_score_model.eval()
         g_optimizer.zero_grad(set_to_none=True)
         for round_idx in range(num_accumulation_rounds):
             with misc.ddp_sync(ddp_generator, (round_idx == num_accumulation_rounds - 1)):
                 images, labels = next(dataset_iterator)
                 images = encoder.encode_latents(images.to(device))
+                
+                # Noise condition.
                 rnd_normal_y = torch.randn([images.shape[0], 1, 1, 1], device=images.device)
                 sigma = (rnd_normal_y * P_std_sigma + P_mean_sigma).exp()
                 y = images + torch.randn_like(images) * sigma
-
-                ddp_generator.train()
-                x, logvar = ddp_generator(y, sigma, labels, return_logvar=True)
-                ddp_score_model.eval()
+                
+                # Compute loss.
                 vsd_loss = vsd_loss_fn(
+                    generator=ddp_generator,
                     net=net,
                     score_model=ddp_score_model, 
-                    x=x,
-                    logvar=logvar,
                     y=y,
                     sigma=sigma,
                     labels=labels.to(device)
@@ -400,24 +399,28 @@ def training_loop(
             for param in g['params']:
                 if param.grad is not None and force_finite:
                     torch.nan_to_num(param.grad, nan=0, posinf=0, neginf=0, out=param.grad)     
-        
         g_optimizer.step()
-                  
-        # Update EMA and training state.
-        state.cur_nimg += batch_size
-        ema_generator.update(cur_nimg=state.cur_nimg, batch_size=batch_size)
-        cumulative_training_time += time.time() - batch_start_time
 
         #------------------------------------------------------------------------------------
-        # print progress
+        # Update progress.
 
+        state.cur_nimg += batch_size
+        ema_generator.update(cur_nimg=state.cur_nimg, batch_size=batch_size)
+        
+        cumulative_training_time += time.time() - batch_start_time
         batch_time = time.time() - batch_start_time
         progress = state.cur_nimg / total_nimg
         estimated_time = total_nimg * (1 - progress) / batch_size * batch_time
+
         dist.print0(
-            f'\rProgress: [{int(progress * 50) * "="}{(50 - int(progress * 50)) * " "}] {state.cur_nimg} / {total_nimg} ({progress * 100:.2f} %)',
-            f'| estimated_time: {dnnlib.util.format_time(estimated_time)} | lr: {lr:.2e} | vsd_loss: {vsd_loss.mean().item():.4f} | dsm_loss: {dsm_loss.mean().item():.4f}', 
+            f'\rProgress: {state.cur_nimg} / {total_nimg} ({progress * 100:.2f} %)',
+            f'| Estimated time: {dnnlib.util.format_time(estimated_time)}',
             end='', flush=True
         )
+        if dist.get_rank() == 0:
+            writer.add_scalar('Loss/VSD', vsd_loss.mean().item(), state.cur_nimg)
+            writer.add_scalar('Loss/DSM', dsm_loss.mean().item(), state.cur_nimg)
+            writer.add_scalar('Learning Rate', lr, state.cur_nimg)
+            writer.flush()
 
 #----------------------------------------------------------------------------
