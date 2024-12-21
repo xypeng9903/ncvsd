@@ -24,18 +24,14 @@ from training.networks_edm2 import GenerativeDenoiser
 warnings.filterwarnings('ignore', '`resume_download` is deprecated')
 
 #----------------------------------------------------------------------------
-# EDM sampler from the paper
-# "Elucidating the Design Space of Diffusion-Based Generative Models",
-# extended to support classifier-free guidance.
+# NCVSD unconditional generation.
 
-def ncvsd_sampler(net: GenerativeDenoiser, noise, labels=None, num_steps=2, init_sigma=80.0, dtype=torch.float16):
-    sigma = torch.ones(noise.shape[0], 1, 1, 1, device=noise.device) * init_sigma
-    y = noise * init_sigma
-    net.to(dtype); y.to(dtype); sigma.to(dtype)
-    net.set_timesteps(num_steps)
+def ncvsd_sampler(net: GenerativeDenoiser, noise, labels=None, ts=None):
+    sigma = torch.ones(noise.shape[0], 1, 1, 1, device=noise.device) * net.init_sigma
+    y = noise * sigma
     with torch.no_grad():
-        x = net(y, sigma, labels)
-    return x
+        x0 = net(y, sigma, labels, ts=ts)
+    return x0
 
 #----------------------------------------------------------------------------
 # Wrapper for torch.Generator that allows specifying a different random seed
@@ -144,6 +140,10 @@ def generate_images(
                             r.labels[:, class_idx] = 1
 
                     # Generate images.
+                    ts = sampler_kwargs.get('ts', None)
+                    if ts is not None:
+                        ts = parse_int_list(ts)
+                        sampler_kwargs['ts'] = ts
                     latents = dnnlib.util.call_func_by_name(func_name=sampler_fn, net=net, noise=r.noise, labels=r.labels, **sampler_kwargs)
                     r.images = encoder.decode(latents)
 
@@ -187,9 +187,7 @@ def parse_int_list(s):
 @click.option('--seeds',                    help='List of random seeds (e.g. 1,2,5-10)', metavar='LIST',            type=parse_int_list, default='16-19', show_default=True)
 @click.option('--class', 'class_idx',       help='Class label  [default: random]', metavar='INT',                   type=click.IntRange(min=0), default=None)
 @click.option('--batch', 'max_batch_size',  help='Maximum batch size', metavar='INT',                               type=click.IntRange(min=1), default=32, show_default=True)
-
-@click.option('--steps', 'num_steps',       help='Number of sampling steps', metavar='INT',                         type=click.IntRange(min=1), default=2, show_default=True)
-@click.option('--init_sigma',                help='Lowest noise level', metavar='FLOAT',                            type=click.FloatRange(min=0, min_open=True), default=80.0, show_default=True)
+@click.option('--ts',                       help='Inference timesteps', metavar='INT',                              type=str, default=None)
 
 def cmdline(**opts):
     """Generate random images using the given model.
