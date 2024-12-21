@@ -1,6 +1,8 @@
 NUM_GPUS=$1
 BATCH_GPU=$2
 
+export HF_HOME="../model_zoo/huggingface"
+export HF_ENDPOINT="http://hf-mirror.com"
 
 torchrun --standalone --nproc_per_node=$NUM_GPUS train_edm2.py \
     --preset="presets/img512-s.json" \
