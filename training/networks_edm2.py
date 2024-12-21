@@ -504,7 +504,7 @@ class PrecondCondition(torch.nn.Module):
         self.logvar_fourier = MPFourier(logvar_channels)
         self.logvar_linear = MPConv(logvar_channels, 1, kernel=[])
 
-    def forward(self, x, sigma, condition_x, condition_sigma, class_labels=None, force_fp32=False, return_logvar=False, **unet_kwargs):
+    def forward(self, x, sigma, condition_x, condition_sigma, class_labels=None, force_fp32=False, return_logvar=False):
         class_labels = None if self.label_dim == 0 else torch.zeros([1, self.label_dim], device=x.device) if class_labels is None else class_labels.to(torch.float32).reshape(-1, self.label_dim)
         dtype = torch.float16 if (self.use_fp16 and not force_fp32 and x.device.type == 'cuda') else torch.float32
         
@@ -520,7 +520,7 @@ class PrecondCondition(torch.nn.Module):
         sigma = sigma.to(torch.float32).reshape(-1, 1, 1, 1)
         c_skip, c_out, c_in, c_noise = self.preconditioning(sigma)
         x_in = (c_in * x).to(dtype)
-        enc_x, enc_skips = self.enc(x_in, c_noise, class_labels, **unet_kwargs)
+        enc_x, enc_skips = self.enc(x_in, c_noise, class_labels)
 
         # UNet decoder forward.
         F_x = self.dec(enc_x, enc_skips, c_noise, class_labels, additional_x=ctrl_x, additional_skips=ctrl_skips)
