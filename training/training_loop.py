@@ -302,9 +302,11 @@ def training_loop(
                     dist.print0(f'Exporting sample images for {fname}')
                     with torch.no_grad():
                         num_samples = 64
+                        assert num_samples % int(num_samples ** 0.5) == 0
                         ema_net.eval()
                         z = torch.randn(num_samples, ema_net.img_channels, ema_net.img_resolution, ema_net.img_resolution, device=device) * init_sigma
-                        x = torch.cat([ema_net(batch, init_sigma * torch.ones(batch.shape[0], 1, 1, 1, device=device), ts=eval_ts) for batch in z.split(eval_batch_size)])
+                        labels = torch.eye(int(num_samples ** 0.5), ema_net.label_dim, device=device).repeat(int(num_samples ** 0.5), 1)
+                        x = torch.cat([ema_net(batch, init_sigma * torch.ones(batch.shape[0], 1, 1, 1, device=device), labels=labels, ts=eval_ts) for batch in z.split(eval_batch_size)])
                         x = encoder.decode(x).cpu()
                         save_image(x.float() / 255., os.path.join(run_dir, f'{fname}.png'), nrow=int(num_samples ** 0.5))
                         del x
