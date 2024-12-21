@@ -567,13 +567,13 @@ class GenerativeDenoiser(torch.nn.Module):
             self, 
             y, 
             sigma, 
-            labels=None, 
-            return_logvar=False, 
-            ts=None,
-            t_min=0.002,
-            t_max=80.0,
-            rho=7.0,
-            steps=40
+            labels        = None, 
+            return_logvar = False, 
+            ts            = None,
+            t_min         = 0.002,
+            t_max         = 80.0,
+            rho           = 7.0,
+            steps         = 40
         ):
         if ts is None:
             return self._forward(y, sigma, labels, return_logvar=return_logvar) 
@@ -583,7 +583,7 @@ class GenerativeDenoiser(torch.nn.Module):
         t_max_rho = t_max ** (1 / rho)
         t_min_rho = t_min ** (1 / rho)
         
-        xt = torch.randn_like(y) * self.init_sigma
+        xt = torch.randn_like(y) * (t_max_rho + ts[0] / (steps - 1) * (t_min_rho - t_max_rho)) ** rho
         for i in range(len(ts) - 1):
             t = (t_max_rho + ts[i] / (steps - 1) * (t_min_rho - t_max_rho)) ** rho
             sigma_eff = 1 / (1 / sigma ** 2 + 1 / t ** 2) ** 0.5
