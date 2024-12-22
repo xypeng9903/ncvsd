@@ -19,8 +19,9 @@ from torch_utils import distributed as dist
 from torch_utils import training_stats
 from torch_utils import persistence
 from torch_utils import misc
+import torch.nn.functional as F
 
-from training.networks_edm2 import PrecondCondition, GenerativeDenoiser
+from training.networks_edm2 import PrecondCondition, GenerativeDenoiser, DiscriminatorCondition
 from torchvision.utils import save_image
 from torch.utils.tensorboard import SummaryWriter
 
@@ -57,25 +58,29 @@ class NCVSDLoss:
             generator,
             net,
             score_model, 
+            discriminator,
             y: torch.Tensor, 
             sigma: torch.Tensor,
             labels: torch.Tensor = None
     ):        
         x, logvar = generator(y, sigma, labels, return_logvar=True)
         
+        rnd_normal_t = torch.randn([y.shape[0], 1, 1, 1], device=y.device)
+        t = (rnd_normal_t * self.P_std + self.P_mean).exp()
+        weight_t = (t ** 2 + self.sigma_data ** 2) / (t * self.sigma_data) ** 2
+        xt = x + torch.randn_like(x) * t
+        
         with torch.no_grad():   
-            rnd_normal_t = torch.randn([y.shape[0], 1, 1, 1], device=y.device)
-            t = (rnd_normal_t * self.P_std + self.P_mean).exp()
-            weight_t = (t ** 2 + self.sigma_data ** 2) / (t * self.sigma_data) ** 2
-            xt = x + torch.randn_like(x) * t
-
             sigma_eff = 1 / (1 / sigma ** 2 + 1 / t ** 2) ** 0.5
             y_eff = (y / sigma ** 2 + xt / t ** 2) * sigma_eff ** 2
             s0 = net(y_eff, sigma_eff, labels)
             s = score_model(xt, t, y, sigma, labels)
 
-        loss_vsd = (weight_t / logvar.exp()) * (x - (s0 - s + x).detach()) ** 2 + logvar
-        return loss_vsd
+        logits = discriminator(xt, t, y, sigma, labels)
+
+        gan_loss = F.binary_cross_entropy_with_logits(logits, torch.ones_like(logits))
+        vsd_loss = (weight_t / logvar.exp()) * (x - (s0 - s + x).detach()) ** 2 + logvar
+        return vsd_loss, gan_loss
 
 #----------------------------------------------------------------------------
 # Denoising score matching.
@@ -96,6 +101,8 @@ class DSMLoss:
             self, 
             generator,
             score_model,
+            discriminator,
+            images: torch.Tensor,
             y: torch.Tensor, 
             sigma: torch.Tensor,
             labels: torch.Tensor = None
@@ -106,11 +113,18 @@ class DSMLoss:
         rnd_normal_t = torch.randn([x.shape[0], 1, 1, 1], device=x.device)
         t = (rnd_normal_t * self.P_std + self.P_mean).exp()
         weight_t = (t ** 2 + self.sigma_data ** 2) / (t * self.sigma_data) ** 2
-        xt = x + torch.randn_like(x) * t
+        
+        xt_fake = x + torch.randn_like(x) * t
+        xt_real = images + torch.randn_like(images) * t
 
-        s, logvar = score_model(xt, t, y, sigma, labels, return_logvar=True)
-        loss = (weight_t / logvar.exp()) * (s - x.detach()) ** 2 + logvar
-        return loss
+        s, logvar = score_model(xt_fake, t, y, sigma, labels, return_logvar=True)
+        logits_real = discriminator(xt_real, t, y, sigma, labels)
+        logits_fake = discriminator(xt_fake, t, y, sigma, labels)        
+        
+        dsm_loss = (weight_t / logvar.exp()) * (s - x.detach()) ** 2 + logvar
+        fake_loss = F.binary_cross_entropy_with_logits(logits_fake, torch.zeros_like(logits_fake))
+        real_loss = F.binary_cross_entropy_with_logits(logits_real, torch.ones_like(logits_real))
+        return dsm_loss, fake_loss, real_loss
     
 #----------------------------------------------------------------------------
 # Learning rate decay schedule used in the paper "Analyzing and Improving
@@ -156,9 +170,10 @@ def training_loop(
     checkpoint_nimg     = 128<<20,   # Save state checkpoint every N training images. None = disable.
  
     loss_scaling        = 1,         # Loss scaling factor for reducing FP16 under/overflows.
+    gan_loss_scaling    = 1,       # Scaling factor for the GAN loss.
     force_finite        = True,      # Get rid of NaN/Inf gradients before feeding them to the optimizer.
     cudnn_benchmark     = True,      # Enable torch.backends.cudnn.benchmark?
-    device              = torch.device('cuda')
+    device              = torch.device('cuda'),
 ):
     # Initialize.
     prev_status_time = time.time()
@@ -194,8 +209,9 @@ def training_loop(
         dist.print0(f'Load teacher model: {net}')
     net = data['ema'].eval().requires_grad_(False).to(device)
     generator = PrecondCondition(**network_kwargs).init_from_pretrained(net).requires_grad_(True).to(device)
-    score_model = PrecondCondition(**network_kwargs).init_from_pretrained(net).requires_grad_(True).to(device)
     generator = GenerativeDenoiser(generator, gamma=gamma, init_sigma=init_sigma)
+    score_model = PrecondCondition(**network_kwargs).init_from_pretrained(net).requires_grad_(True).to(device)
+    discriminator = DiscriminatorCondition(**network_kwargs).init_from_pretrained(net).requires_grad_(True).to(device)
     ema_generator = dnnlib.util.construct_class_by_name(net=generator, **ema_kwargs) if ema_kwargs is not None else None
     
     # TODO: Print network summary.
@@ -205,8 +221,10 @@ def training_loop(
     state = dnnlib.EasyDict(cur_nimg=0, total_elapsed_time=0)
     ddp_generator = torch.nn.parallel.DistributedDataParallel(generator, device_ids=[device])
     ddp_score_model = torch.nn.parallel.DistributedDataParallel(score_model, device_ids=[device])
+    ddp_discriminator = torch.nn.parallel.DistributedDataParallel(discriminator, device_ids=[device])
     g_optimizer = dnnlib.util.construct_class_by_name(params=ddp_generator.parameters(), **optimizer_kwargs)
     s_optimizer = dnnlib.util.construct_class_by_name(params=ddp_score_model.parameters(), **optimizer_kwargs)
+    d_optimizer = dnnlib.util.construct_class_by_name(params=ddp_discriminator.parameters(), **optimizer_kwargs)
     vsd_loss_fn = dnnlib.util.construct_class_by_name(**vsd_loss_kwargs)
     dsm_loss_fn = dnnlib.util.construct_class_by_name(**dsm_loss_kwargs)
     
@@ -215,8 +233,10 @@ def training_loop(
         state=state, 
         generator=generator,
         score_model=score_model,
+        discriminator=discriminator,
         g_optimizer=g_optimizer,
         s_optimizer=s_optimizer,
+        d_optimizer=d_optimizer,
         ema_generator=ema_generator
     )
     checkpoint.load_latest(run_dir)
@@ -326,25 +346,32 @@ def training_loop(
         #------------------------------------------------------------------------------------
         # Denoising score matching.
 
-        ddp_generator.eval()
-        ddp_score_model.train()
+        ddp_generator.eval().requires_grad_(False)
+        ddp_score_model.train().requires_grad_(True)
+        ddp_discriminator.train().requires_grad_(True)
         s_optimizer.zero_grad(set_to_none=True)
+        d_optimizer.zero_grad(set_to_none=True)
+
+        # Forward & backward.
         for round_idx in range(num_accumulation_rounds):
             with misc.ddp_sync(ddp_score_model, (round_idx == num_accumulation_rounds - 1)):
                 images, labels = next(dataset_iterator)
                 images = encoder.encode_latents(images.to(device))
                 sigma = karras_sigma_sampler(images.shape[0], images.device)
                 y = images + torch.randn_like(images) * sigma
-                dsm_loss = dsm_loss_fn(
+                dsm_loss, fake_loss, real_loss = dsm_loss_fn(
                     generator=ddp_generator,
-                    score_model=ddp_score_model, 
+                    score_model=ddp_score_model,
+                    discriminator=ddp_discriminator, 
+                    images=images,
                     y=y, 
                     sigma=sigma,
                     labels=labels.to(device)
                 )
                 dsm_loss.sum().mul(loss_scaling / batch_gpu_total).backward()
+                (fake_loss + real_loss).mul(loss_scaling / batch_gpu_total).backward()
 
-        # Run optimizer and update weights.
+        # Score model optimization.
         lr = dnnlib.util.call_func_by_name(cur_nimg=state.cur_nimg, batch_size=batch_size, **lr_kwargs)
         for g in s_optimizer.param_groups:
             g['lr'] = lr
@@ -353,29 +380,42 @@ def training_loop(
                     torch.nan_to_num(param.grad, nan=0, posinf=0, neginf=0, out=param.grad)     
         s_optimizer.step()
 
+        # Discriminator optimization.
+        lr = dnnlib.util.call_func_by_name(cur_nimg=state.cur_nimg, batch_size=batch_size, **lr_kwargs)
+        for g in d_optimizer.param_groups:
+            g['lr'] = lr
+            for param in g['params']:
+                if param.grad is not None and force_finite:
+                    torch.nan_to_num(param.grad, nan=0, posinf=0, neginf=0, out=param.grad)     
+        d_optimizer.step()
+
         #------------------------------------------------------------------------------------
         # Variational score distillation.
 
-        ddp_generator.train()
-        ddp_score_model.eval()
+        ddp_generator.train().requires_grad_(True)
+        ddp_score_model.eval().requires_grad_(False)
+        ddp_discriminator.eval().requires_grad_(False)
         g_optimizer.zero_grad(set_to_none=True)
+
+        # Forward & backward.
         for round_idx in range(num_accumulation_rounds):
             with misc.ddp_sync(ddp_generator, (round_idx == num_accumulation_rounds - 1)):
                 images, labels = next(dataset_iterator)
                 images = encoder.encode_latents(images.to(device))
                 sigma = karras_sigma_sampler(images.shape[0], images.device)
                 y = images + torch.randn_like(images) * sigma
-                vsd_loss = vsd_loss_fn(
+                vsd_loss, gan_loss = vsd_loss_fn(
                     generator=ddp_generator,
                     net=net,
                     score_model=ddp_score_model, 
+                    discriminator=ddp_discriminator,
                     y=y,
                     sigma=sigma,
                     labels=labels.to(device)
                 )
-                vsd_loss.sum().mul(loss_scaling / batch_gpu_total).backward()
+                (vsd_loss + gan_loss * gan_loss_scaling).sum().mul(loss_scaling / batch_gpu_total).backward()
 
-        # Run optimizer and update weights.
+        # Generator optimization.
         lr = dnnlib.util.call_func_by_name(cur_nimg=state.cur_nimg, batch_size=batch_size, **lr_kwargs)
         for g in g_optimizer.param_groups:
             g['lr'] = lr * g_lr_scaling
@@ -402,7 +442,10 @@ def training_loop(
         )
         if dist.get_rank() == 0:
             writer.add_scalar('Loss/VSD', vsd_loss.mean().item(), state.cur_nimg)
+            writer.add_scalar('Loss/GAN', gan_loss.mean().item(), state.cur_nimg)
             writer.add_scalar('Loss/DSM', dsm_loss.mean().item(), state.cur_nimg)
+            writer.add_scalar('Loss/Fake', fake_loss.mean().item(), state.cur_nimg)
+            writer.add_scalar('Loss/Real', real_loss.mean().item(), state.cur_nimg)
             writer.add_scalar('Learning Rate', lr, state.cur_nimg)
             writer.flush()
 

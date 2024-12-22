@@ -55,6 +55,7 @@ def setup_training_config(preset: str, **opts):
         net=opts.net,
         gamma=preset['gamma'],
         g_lr_scaling=preset['g_lr_scaling'],
+        gan_loss_scaling=preset['gan_loss_scaling'],
         eval_ts=parse_int_list(opts.ts) if opts.ts else None,
     )
     c.network_kwargs = dnnlib.EasyDict(**preset['network_kwargs'])

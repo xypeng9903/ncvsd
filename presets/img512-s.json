@@ -8,6 +8,7 @@
     },
     "gamma": 0.414,
     "g_lr_scaling": 0.01,
+    "gan_loss_scaling": 0.01,
     "vsd_loss_kwargs": {
         "P_mean": -0.4, 
         "P_std": 1.0
