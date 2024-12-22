@@ -12,6 +12,7 @@ import numpy as np
 import torch
 from torch_utils import persistence
 from torch_utils import misc
+import torch.nn.functional as F
 
 #----------------------------------------------------------------------------
 # Normalize given tensor to unit magnitude with respect to the given
@@ -672,16 +673,8 @@ class DiscriminatorCondition(torch.nn.Module):
         c_noise = torch.randn(1, 1, 1, 1).flatten().log() / 4
         class_labels = torch.eye(1, label_dim)
         enc_x, _ = self.enc(x_in, c_noise, class_labels)
-        enc_cout = enc_x.shape[1]
-        self.discriminator = torch.nn.Sequential(
-            torch.nn.AdaptiveMaxPool2d((1, 1)),
-            torch.nn.Flatten(),
-            torch.nn.Linear(enc_cout*2, discriminator_channels),
-            torch.nn.ReLU(),
-            torch.nn.Linear(discriminator_channels, 1)
-        )
-        dtype = torch.float16 if self.use_fp16 else torch.float32
-        self.discriminator = self.discriminator.to(dtype)
+        cout = enc_x.shape[1]
+        self.out_conv = MPConv(cout*2, discriminator_channels, kernel=[])
 
         # disable inplace normalization
         def disable_inplace_normalization(m):
@@ -707,8 +700,9 @@ class DiscriminatorCondition(torch.nn.Module):
         x_in = (c_in * x).to(dtype)
         enc_x, enc_skips = self.enc(x_in, c_noise, class_labels)
 
-        # Discriminator forward.
-        logits = self.discriminator(mp_cat(ctrl_x, enc_x))      
+        # MLP forward.
+        logits = F.adaptive_avg_pool2d(mp_cat(ctrl_x, enc_x), (1, 1)).flatten()      
+        logits = self.out_conv(logits)
         return logits
     
     def preconditioning(self, sigma):
