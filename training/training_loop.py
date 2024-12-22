@@ -61,7 +61,8 @@ class NCVSDLoss:
             discriminator,
             y: torch.Tensor, 
             sigma: torch.Tensor,
-            labels: torch.Tensor = None
+            labels: torch.Tensor = None,
+            disable_gan: bool = False
     ):        
         x, logvar = generator(y, sigma, labels, return_logvar=True)
         
@@ -76,10 +77,12 @@ class NCVSDLoss:
             s0 = net(y_eff, sigma_eff, labels)
             s = score_model(xt, t, y, sigma, labels)
 
-        logits = discriminator(xt, t, y, sigma, labels)
-
-        gan_loss = F.binary_cross_entropy_with_logits(logits, torch.ones_like(logits))
         vsd_loss = (weight_t / logvar.exp()) * (x - (s0 - s + x).detach()) ** 2 + logvar
+        if disable_gan:
+            return vsd_loss, None
+        
+        logits = discriminator(xt, t, y, sigma, labels)
+        gan_loss = F.binary_cross_entropy_with_logits(logits, torch.ones_like(logits))
         return vsd_loss, gan_loss
 
 #----------------------------------------------------------------------------
@@ -159,6 +162,7 @@ def training_loop(
     eval_batch_size     = 8,         # Batch size for evaluation.
     g_lr_scaling        = 1,         # Learning rate scaling factor for the generator.
     d_lr_scaling        = 1,         # Learning rate scaling factor for the discriminator.
+    gan_warmup_batches  = 0,         # Number of batches to warm up the GAN loss.
  
     run_dir             = '.',       # Output directory.
     seed                = 0,         # Global random seed.
@@ -412,9 +416,11 @@ def training_loop(
                     discriminator=ddp_discriminator,
                     y=y,
                     sigma=sigma,
-                    labels=labels.to(device)
+                    labels=labels.to(device),
+                    disable_gan=state.cur_nimg < gan_warmup_batches * batch_size
                 )
-                (vsd_loss + gan_loss * gan_loss_scaling).sum().mul(loss_scaling / batch_gpu_total).backward()
+                g_loss = vsd_loss if gan_loss is None else vsd_loss + gan_loss * gan_loss_scaling
+                g_loss.sum().mul(loss_scaling / batch_gpu_total).backward()
 
         # Generator optimization.
         lr = dnnlib.util.call_func_by_name(cur_nimg=state.cur_nimg, batch_size=batch_size, **lr_kwargs)

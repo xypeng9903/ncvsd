@@ -10,6 +10,7 @@
     "g_lr_scaling": 0.01,
     "d_lr_scaling": 0.01,
     "gan_loss_scaling": 0.01,
+    "gan_warmup_batches": 10000,
     "vsd_loss_kwargs": {
         "P_mean": -0.4, 
         "P_std": 1.0
