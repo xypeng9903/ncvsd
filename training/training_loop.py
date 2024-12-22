@@ -401,6 +401,7 @@ def training_loop(
         ddp_score_model.eval().requires_grad_(False)
         ddp_discriminator.eval().requires_grad_(False)
         g_optimizer.zero_grad(set_to_none=True)
+        disable_gan = state.cur_nimg < gan_warmup_batches * batch_size
 
         # Forward & backward.
         for round_idx in range(num_accumulation_rounds):
@@ -417,7 +418,7 @@ def training_loop(
                     y=y,
                     sigma=sigma,
                     labels=labels.to(device),
-                    disable_gan=state.cur_nimg < gan_warmup_batches * batch_size
+                    disable_gan=disable_gan
                 )
                 g_loss = vsd_loss if gan_loss is None else vsd_loss + gan_loss * gan_loss_scaling
                 g_loss.sum().mul(loss_scaling / batch_gpu_total).backward()
@@ -449,7 +450,8 @@ def training_loop(
         )
         if dist.get_rank() == 0:
             writer.add_scalar('Loss/VSD', vsd_loss.mean().item(), state.cur_nimg)
-            writer.add_scalar('Loss/GAN', gan_loss.mean().item(), state.cur_nimg)
+            if gan_loss is not None:
+                writer.add_scalar('Loss/GAN', gan_loss.mean().item(), state.cur_nimg)
             writer.add_scalar('Loss/DSM', dsm_loss.mean().item(), state.cur_nimg)
             writer.add_scalar('Loss/Fake', fake_loss.mean().item(), state.cur_nimg)
             writer.add_scalar('Loss/Real', real_loss.mean().item(), state.cur_nimg)
