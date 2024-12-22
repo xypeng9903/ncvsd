@@ -9,7 +9,7 @@
     "gamma": 0.414,
     "g_lr_scaling": 0.01,
     "d_lr_scaling": 0.01,
-    "gan_loss_scaling": 0.01,
+    "gan_loss_scaling": 100,
     "gan_warmup_batches": 10000,
     "vsd_loss_kwargs": {
         "P_mean": -0.4, 
