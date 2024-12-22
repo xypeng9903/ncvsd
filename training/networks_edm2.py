@@ -676,7 +676,7 @@ class DiscriminatorCondition(torch.nn.Module):
         cout = enc_x.shape[1]
         self.out_conv = MPConv(cout*2, discriminator_channels, kernel=[])
 
-        # disable inplace normalization
+        # Disable inplace normalization.
         def disable_inplace_normalization(m):
             if isinstance(m, MPConv):
                 m.use_gan = True
