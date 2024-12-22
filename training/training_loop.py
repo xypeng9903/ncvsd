@@ -158,6 +158,7 @@ def training_loop(
     num_eval_samples    = 64,        # Number of samples for evaluation.
     eval_batch_size     = 8,         # Batch size for evaluation.
     g_lr_scaling        = 1,         # Learning rate scaling factor for the generator.
+    d_lr_scaling        = 1,         # Learning rate scaling factor for the discriminator.
  
     run_dir             = '.',       # Output directory.
     seed                = 0,         # Global random seed.
@@ -170,7 +171,7 @@ def training_loop(
     checkpoint_nimg     = 128<<20,   # Save state checkpoint every N training images. None = disable.
  
     loss_scaling        = 1,         # Loss scaling factor for reducing FP16 under/overflows.
-    gan_loss_scaling    = 1,       # Scaling factor for the GAN loss.
+    gan_loss_scaling    = 1,         # Scaling factor for the GAN loss.
     force_finite        = True,      # Get rid of NaN/Inf gradients before feeding them to the optimizer.
     cudnn_benchmark     = True,      # Enable torch.backends.cudnn.benchmark?
     device              = torch.device('cuda'),
@@ -383,7 +384,7 @@ def training_loop(
         # Discriminator optimization.
         lr = dnnlib.util.call_func_by_name(cur_nimg=state.cur_nimg, batch_size=batch_size, **lr_kwargs)
         for g in d_optimizer.param_groups:
-            g['lr'] = lr
+            g['lr'] = lr * d_lr_scaling
             for param in g['params']:
                 if param.grad is not None and force_finite:
                     torch.nan_to_num(param.grad, nan=0, posinf=0, neginf=0, out=param.grad)     
