@@ -659,7 +659,6 @@ class UNetModel(nn.Module):
         for module in self.output_blocks:
             h = th.cat([h, hs.pop()], dim=1)
             h = module(h, emb)
-        h = h.type(th.float32)
         return self.out(h)
 
 
@@ -893,10 +892,8 @@ class EncoderUNetModel(nn.Module):
             h = h.type(x.dtype)
             return self.out(h)
         
-
-
 #----------------------------------------------------------------------------
-# UNet encoder
+# UNet encoder.
 
 class UNetEncoder(nn.Module):
     """
@@ -1105,35 +1102,8 @@ class UNetEncoder(nn.Module):
             controlnet_block = zero_module(controlnet_block)
             self.controlnet_mid_block = controlnet_block
 
-    def convert_to_fp16(self):
-        """
-        Convert the torso of the model to float16.
-        """
-        self.input_blocks.apply(convert_module_to_f16)
-        self.middle_block.apply(convert_module_to_f16)
-        if self.is_controlnet:
-            self.controlnet_down_blocks.apply(convert_module_to_f16)
-            self.controlnet_mid_block.apply(convert_module_to_f16)
-
-    def convert_to_fp32(self):
-        """
-        Convert the torso of the model to float32.
-        """
-        self.input_blocks.apply(convert_module_to_f32)
-        self.middle_block.apply(convert_module_to_f32)
-        if self.is_controlnet:
-            self.controlnet_down_blocks.apply(convert_module_to_f32)
-            self.controlnet_mid_block.apply(convert_module_to_f32)
-
-    def enable_gradient_checkpointing(self):
-        for module in self.modules():
-            if hasattr(module, 'use_checkpoint'):
-                module.use_checkpoint = True
-
-    def disable_gradient_checkpointing(self):
-        for module in self.modules():
-            if hasattr(module, 'use_checkpoint'):
-                module.use_checkpoint = False
+        if use_fp16:
+            self.apply(convert_module_to_f16)
 
     def forward(self, x, timesteps, y=None):
         """
@@ -1143,10 +1113,7 @@ class UNetEncoder(nn.Module):
         :param timesteps: a 1-D batch of timesteps.
         :param y: an [N] Tensor of labels, if class-conditional.
         :return: an [N x C x ...] Tensor of outputs.
-        """
-        if y is not None and y.shape[-1] == 0:
-            y = None
-
+        """    
         assert (y is not None) == (
             self.num_classes is not None
         ), "must specify y if and only if the model is class-conditional"
@@ -1175,9 +1142,8 @@ class UNetEncoder(nn.Module):
 
         return h, hs
  
-
 #----------------------------------------------------------------------------
-# UNet decoder
+# UNet decoder.
 
 class UNetDecoder(nn.Module):
     """
@@ -1340,27 +1306,8 @@ class UNetDecoder(nn.Module):
             zero_module(conv_nd(dims, input_ch, out_channels, 3, padding=1)),
         )
 
-    def convert_to_fp16(self):
-        """
-        Convert the torso of the model to float16.
-        """
-        self.output_blocks.apply(convert_module_to_f16)
-
-    def convert_to_fp32(self):
-        """
-        Convert the torso of the model to float32.
-        """
-        self.output_blocks.apply(convert_module_to_f32)
-
-    def enable_gradient_checkpointing(self):
-        for module in self.modules():
-            if hasattr(module, 'use_checkpoint'):
-                module.use_checkpoint = True
-                
-    def disable_gradient_checkpointing(self):
-        for module in self.modules():
-            if hasattr(module, 'use_checkpoint'):
-                module.use_checkpoint = False
+        if use_fp16:
+            self.apply(convert_module_to_f16)
 
     def forward(self, h, hs, timesteps, y=None, additional_hs=None, additional_h=None):
         """
@@ -1371,9 +1318,6 @@ class UNetDecoder(nn.Module):
         :param y: an [N] Tensor of labels, if class-conditional.
         :return: an [N x C x ...] Tensor of outputs.
         """
-        if y is not None and y.shape[-1] == 0:
-            y = None
-
         assert (y is not None) == (
             self.num_classes is not None
         ), "must specify y if and only if the model is class-conditional"
@@ -1396,13 +1340,10 @@ class UNetDecoder(nn.Module):
         for module in self.output_blocks:
             h = th.cat([h, hs.pop()], dim=1)
             h = module(h, emb)
-        h = h.type(th.float32)
         return self.out(h)
     
-
-
 #----------------------------------------------------------------------------
-# Preconditioned UNet
+# Preconditioned UNet.
 
 class Precond(th.nn.Module):
     def __init__(self,
@@ -1417,12 +1358,14 @@ class Precond(th.nn.Module):
         self.img_resolution = unet_kwargs['image_size']
         self.img_channels = unet_kwargs['in_channels']
         self.label_dim = unet_kwargs.get('num_classes', 0)
-        if self.use_fp16:
-            self.unet.convert_to_fp16()
         self.unet_kwargs = unet_kwargs
+        if self.use_fp16:
+            self.convert_to_fp16()
 
     def forward(self, x, sigma, class_labels=None, force_fp32=False, **kwargs):
         dtype = th.float16 if (self.use_fp16 and not force_fp32 and x.device.type == 'cuda') else th.float32
+        if class_labels is not None and class_labels.shape[-1] == 0:
+            class_labels = None
         x = x.to(th.float32)
         sigma = sigma.to(th.float32).reshape(-1, 1, 1, 1)
         c_skip, c_out, c_in, c_noise = self.preconditioning(sigma)
@@ -1445,19 +1388,13 @@ class Precond(th.nn.Module):
         log_sigma = sigma.log()
         dists = log_sigma - self.log_sigmas[:, None]
         return dists.abs().argmin(dim=0).view(sigma.shape)
-
-    def t_to_sigma(self, t):
-        t = t.float()
-        low_idx, high_idx, w = t.floor().long(), t.ceil().long(), t.frac()
-        log_sigma = (1 - w) * self.log_sigmas[low_idx] + w * self.log_sigmas[high_idx]
-        return log_sigma.exp()
     
     def init_from_pretrained(self, unet: UNetModel):
         self.unet.load_state_dict(unet.state_dict(), strict=False)
         return self
     
     def convert_to_fp16(self):
-        self.unet.convert_to_fp16()
+        self.apply(convert_module_to_f16)
         def set_dtype(module):
             if hasattr(module, 'dtype'):
                 module.dtype = th.float16
@@ -1467,7 +1404,7 @@ class Precond(th.nn.Module):
         return self
     
     def convert_to_fp32(self):
-        self.unet.convert_to_fp32()
+        self.apply(convert_module_to_f32)
         def set_dtype(module):
             if hasattr(module, 'dtype'):
                 module.dtype = th.float32
@@ -1476,9 +1413,8 @@ class Precond(th.nn.Module):
         self.apply(set_dtype)
         return self
 
-
 #----------------------------------------------------------------------------
-# Condition UNet
+# Condition UNet.
 
 class PrecondCondition(th.nn.Module):
     def __init__(self,
@@ -1496,19 +1432,19 @@ class PrecondCondition(th.nn.Module):
         self.img_resolution = unet_kwargs['image_size']
         self.img_channels = unet_kwargs['in_channels']
         self.label_dim = unet_kwargs.get('num_classes', 0)
-        if self.use_fp16:
-            self.enc.convert_to_fp16()
-            self.dec.convert_to_fp16()
-            self.ctrl.convert_to_fp16()
         self.logvar_net = nn.Sequential(
             linear(1, logvar_channels),
             nn.SiLU(),
             linear(logvar_channels, 1),
         )
         self.unet_kwargs = unet_kwargs
+        if self.use_fp16:
+            self.convert_to_fp16()
 
     def forward(self, x, sigma, condition_x, condition_sigma, class_labels=None, force_fp32=False, return_logvar=False, **kwargs):
         dtype = th.float16 if (self.use_fp16 and not force_fp32 and x.device.type == 'cuda') else th.float32
+        if class_labels is not None and class_labels.shape[-1] == 0:
+            class_labels = None
         
         # Controlnet forward.
         condition_x = condition_x.to(th.float32)
@@ -1548,12 +1484,6 @@ class PrecondCondition(th.nn.Module):
         log_sigma = sigma.log()
         dists = log_sigma - self.log_sigmas[:, None]
         return dists.abs().argmin(dim=0).view(sigma.shape)
-
-    def t_to_sigma(self, t):
-        t = t.float()
-        low_idx, high_idx, w = t.floor().long(), t.ceil().long(), t.frac()
-        log_sigma = (1 - w) * self.log_sigmas[low_idx] + w * self.log_sigmas[high_idx]
-        return log_sigma.exp()
     
     def init_from_pretrained(self, unet: UNetModel):
         self.enc.load_state_dict(unet.state_dict(), strict=False)
@@ -1562,9 +1492,7 @@ class PrecondCondition(th.nn.Module):
         return self
     
     def convert_to_fp16(self):
-        self.enc.convert_to_fp16()
-        self.dec.convert_to_fp16()
-        self.ctrl.convert_to_fp16()
+        self.apply(convert_module_to_f16)
         def set_dtype(module):
             if hasattr(module, 'dtype'):
                 module.dtype = th.float16
@@ -1582,7 +1510,6 @@ class PrecondCondition(th.nn.Module):
                 module.use_fp16 = False
         self.apply(set_dtype)
         return self
-
 
 #----------------------------------------------------------------------------
 # Generative denoiser.
@@ -1637,10 +1564,29 @@ class GenerativeDenoiser(th.nn.Module):
         sigma_hat = sigma * (1 + self.gamma)
         y_hat = y + z * (sigma_hat ** 2 - sigma ** 2) ** 0.5
         return self.model(y_hat, sigma_hat, y, sigma, labels, return_logvar=return_logvar)
-    
 
+    def convert_to_fp16(self):
+        self.apply(convert_module_to_f16)
+        def set_dtype(module):
+            if hasattr(module, 'dtype'):
+                module.dtype = th.float16
+            if hasattr(module, 'use_fp16'):
+                module.use_fp16 = True
+        self.apply(set_dtype)
+        return self
+    
+    def convert_to_fp32(self):
+        self.apply(convert_module_to_f32)
+        def set_dtype(module):
+            if hasattr(module, 'dtype'):
+                module.dtype = th.float32
+            if hasattr(module, 'use_fp16'):
+                module.use_fp16 = False
+        self.apply(set_dtype)
+        return self
+    
 #----------------------------------------------------------------------------
-# Condition Discriminator.
+# Condition discriminator.
 
 class DiscriminatorCondition(th.nn.Module):
     def __init__(self,
@@ -1651,28 +1597,28 @@ class DiscriminatorCondition(th.nn.Module):
         sigmas = ((1 - alphas_cumprod) / alphas_cumprod) ** 0.5
         self.register_buffer('log_sigmas', th.log(th.tensor(sigmas)))
         self.use_fp16 = unet_kwargs.get('use_fp16', False)
-        self.enc = UNetEncoder(**unet_kwargs)
-        self.ctrl = UNetEncoder(**unet_kwargs, is_controlnet=True)
-        
-        # Config.
-        if self.use_fp16:
-            self.enc.convert_to_fp16()
-            self.ctrl.convert_to_fp16()
         self.img_resolution = unet_kwargs['image_size']
         self.img_channels = unet_kwargs['in_channels']
         self.label_dim = unet_kwargs.get('num_classes', 0)
+        self.dtype = th.float16 if self.use_fp16 else th.float32
         self.unet_kwargs = unet_kwargs
-
-        # Scalar output.
+        
+        self.enc = UNetEncoder(**unet_kwargs)
+        self.ctrl = UNetEncoder(**unet_kwargs)
+        if self.use_fp16:
+            self.convert_to_fp16()
+        
         x_in = th.randn(1, self.img_channels, self.img_resolution, self.img_resolution)
         c_noise = th.zeros(1)
         class_labels = th.eye(1, self.label_dim) if self.label_dim else None
         enc_x, _ = self.enc(x_in, c_noise, class_labels)
         cout = enc_x.shape[1]
-        self.fc = nn.Linear(cout, 1)
-
+        self.fc = nn.Linear(cout*2, 1).to(self.dtype)
+        
     def forward(self, x, sigma, condition_x, condition_sigma, class_labels=None, force_fp32=False):
         dtype = th.float16 if (self.use_fp16 and not force_fp32 and x.device.type == 'cuda') else th.float32
+        if class_labels is not None and class_labels.shape[-1] == 0:
+            class_labels = None
         
         # Controlnet forward.
         condition_x = condition_x.to(th.float32)
@@ -1689,7 +1635,7 @@ class DiscriminatorCondition(th.nn.Module):
         h, hs = self.enc(x_in, c_noise, class_labels)
 
         # Reduce to scalar.
-        logits = F.adaptive_avg_pool2d(th.cat([ctrl_h, h], dim=1), (1, 1)).flatten(1)     
+        logits = F.adaptive_avg_pool2d(th.cat([ctrl_h, h], dim=1), (1, 1)).flatten(1)
         logits = self.fc(logits)
         return logits.view(-1, 1, 1, 1)
     
@@ -1704,12 +1650,6 @@ class DiscriminatorCondition(th.nn.Module):
         log_sigma = sigma.log()
         dists = log_sigma - self.log_sigmas[:, None]
         return dists.abs().argmin(dim=0).view(sigma.shape)
-
-    def t_to_sigma(self, t):
-        t = t.float()
-        low_idx, high_idx, w = t.floor().long(), t.ceil().long(), t.frac()
-        log_sigma = (1 - w) * self.log_sigmas[low_idx] + w * self.log_sigmas[high_idx]
-        return log_sigma.exp()
     
     def init_from_pretrained(self, unet: UNetModel):
         self.enc.load_state_dict(unet.state_dict(), strict=False)
@@ -1717,8 +1657,7 @@ class DiscriminatorCondition(th.nn.Module):
         return self
     
     def convert_to_fp16(self):
-        self.enc.convert_to_fp16()
-        self.ctrl.convert_to_fp16()
+        self.apply(convert_module_to_f16)
         def set_dtype(module):
             if hasattr(module, 'dtype'):
                 module.dtype = th.float16

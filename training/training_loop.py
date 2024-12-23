@@ -73,8 +73,7 @@ class NCVSDLoss:
     ):        
         x, logvar = generator(y, sigma, labels, return_logvar=True)
         
-        rnd_normal_t = torch.randn([y.shape[0], 1, 1, 1], device=y.device)
-        t = (rnd_normal_t * self.P_std + self.P_mean).exp()
+        t = ddpm_sigma_sampler(y.shape[0], y.device)
         weight_t = (t ** 2 + self.sigma_data ** 2) / (t * self.sigma_data) ** 2
         xt = x + torch.randn_like(x) * t
         
