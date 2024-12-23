@@ -1585,7 +1585,7 @@ class PrecondCondition(th.nn.Module):
 
 
 #----------------------------------------------------------------------------
-# Generative denoiser
+# Generative denoiser.
 
 class GenerativeDenoiser(th.nn.Module):
     def __init__(self,
@@ -1637,3 +1637,102 @@ class GenerativeDenoiser(th.nn.Module):
         sigma_hat = sigma * (1 + self.gamma)
         y_hat = y + z * (sigma_hat ** 2 - sigma ** 2) ** 0.5
         return self.model(y_hat, sigma_hat, y, sigma, labels, return_logvar=return_logvar)
+    
+
+#----------------------------------------------------------------------------
+# Condition Discriminator.
+
+class DiscriminatorCondition(th.nn.Module):
+    def __init__(self,
+        alphas_cumprod,          # DDPM schedule.
+        **unet_kwargs,           # Keyword arguments for UNet.
+    ):
+        super().__init__()
+        sigmas = ((1 - alphas_cumprod) / alphas_cumprod) ** 0.5
+        self.register_buffer('log_sigmas', th.log(th.tensor(sigmas)))
+        self.use_fp16 = unet_kwargs.get('use_fp16', False)
+        self.enc = UNetEncoder(**unet_kwargs)
+        self.ctrl = UNetEncoder(**unet_kwargs, is_controlnet=True)
+        
+        # Config.
+        if self.use_fp16:
+            self.enc.convert_to_fp16()
+            self.ctrl.convert_to_fp16()
+        self.img_resolution = unet_kwargs['image_size']
+        self.img_channels = unet_kwargs['in_channels']
+        self.label_dim = unet_kwargs.get('num_classes', 0)
+        self.unet_kwargs = unet_kwargs
+
+        # Scalar output.
+        x_in = th.randn(1, self.img_channels, self.img_resolution, self.img_resolution)
+        c_noise = th.zeros(1)
+        class_labels = th.eye(1, self.label_dim) if self.label_dim else None
+        enc_x, _ = self.enc(x_in, c_noise, class_labels)
+        cout = enc_x.shape[1]
+        self.fc = nn.Linear(cout, 1)
+
+    def forward(self, x, sigma, condition_x, condition_sigma, class_labels=None, force_fp32=False):
+        dtype = th.float16 if (self.use_fp16 and not force_fp32 and x.device.type == 'cuda') else th.float32
+        
+        # Controlnet forward.
+        condition_x = condition_x.to(th.float32)
+        condition_sigma = condition_sigma.to(th.float32).reshape(-1, 1, 1, 1)
+        c_skip, c_out, c_in, c_noise = self.preconditioning(condition_sigma)
+        x_in = (c_in * condition_x).to(dtype)
+        ctrl_h, ctrl_hs = self.ctrl(x_in, c_noise, class_labels)
+
+        # UNet encoder forward.
+        x = x.to(th.float32)
+        sigma = sigma.to(th.float32).reshape(-1, 1, 1, 1)
+        c_skip, c_out, c_in, c_noise = self.preconditioning(sigma)
+        x_in = (c_in * x).to(dtype)
+        h, hs = self.enc(x_in, c_noise, class_labels)
+
+        # Reduce to scalar.
+        logits = F.adaptive_avg_pool2d(th.cat([ctrl_h, h], dim=1), (1, 1)).flatten(1)     
+        logits = self.fc(logits)
+        return logits
+    
+    def preconditioning(self, sigma):
+        c_skip = 1.
+        c_out = -sigma
+        c_in = 1 / (sigma ** 2 + 1) ** 0.5
+        c_noise = self.sigma_to_t(sigma.view(-1))
+        return c_skip, c_out, c_in, c_noise
+    
+    def sigma_to_t(self, sigma):
+        log_sigma = sigma.log()
+        dists = log_sigma - self.log_sigmas[:, None]
+        return dists.abs().argmin(dim=0).view(sigma.shape)
+
+    def t_to_sigma(self, t):
+        t = t.float()
+        low_idx, high_idx, w = t.floor().long(), t.ceil().long(), t.frac()
+        log_sigma = (1 - w) * self.log_sigmas[low_idx] + w * self.log_sigmas[high_idx]
+        return log_sigma.exp()
+    
+    def init_from_pretrained(self, unet: UNetModel):
+        self.enc.load_state_dict(unet.state_dict(), strict=False)
+        self.ctrl.load_state_dict(unet.state_dict(), strict=False)
+        return self
+    
+    def convert_to_fp16(self):
+        self.enc.convert_to_fp16()
+        self.ctrl.convert_to_fp16()
+        def set_dtype(module):
+            if hasattr(module, 'dtype'):
+                module.dtype = th.float16
+            if hasattr(module, 'use_fp16'):
+                module.use_fp16 = True
+        self.apply(set_dtype)
+        return self
+    
+    def convert_to_fp32(self):
+        self.apply(convert_module_to_f32)
+        def set_dtype(module):
+            if hasattr(module, 'dtype'):
+                module.dtype = th.float32
+            if hasattr(module, 'use_fp16'):
+                module.use_fp16 = False
+        self.apply(set_dtype)
+        return self

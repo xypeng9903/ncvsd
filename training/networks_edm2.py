@@ -12,6 +12,7 @@ import numpy as np
 import torch
 from torch_utils import persistence
 from torch_utils import misc
+import torch.nn.functional as F
 
 #----------------------------------------------------------------------------
 # Normalize given tensor to unit magnitude with respect to the given
@@ -89,25 +90,60 @@ class MPFourier(torch.nn.Module):
 # Magnitude-preserving convolution or fully-connected layer (Equation 47)
 # with force weight normalization (Equation 66).
 
+# @persistence.persistent_class
+# class MPConv(torch.nn.Module):
+#     def __init__(self, in_channels, out_channels, kernel):
+#         super().__init__()
+#         self.out_channels = out_channels
+#         self.weight = torch.nn.Parameter(torch.randn(out_channels, in_channels, *kernel))
+#         self.in_place_normalization = True
+
+#     def forward(self, x, gain=1):
+#         w = self.weight.to(torch.float32)
+#         if self.training and self.in_place_normalization:
+#             with torch.no_grad():
+#                 self.weight.copy_(normalize(w)) # forced weight normalization
+#         w = normalize(w) # traditional weight normalization
+#         w = w * (gain / np.sqrt(w[0].numel())) # magnitude-preserving scaling
+#         w = w.to(x.dtype)
+#         if w.ndim == 2:
+#             return x @ w.t()
+#         assert w.ndim == 4
+#         return torch.nn.functional.conv2d(x, w, padding=(w.shape[-1]//2,))
+    
+
 @persistence.persistent_class
 class MPConv(torch.nn.Module):
-    def __init__(self, in_channels, out_channels, kernel):
+    def __init__(self, in_channels, out_channels, kernel, force_normalization=True, use_gan=False):
         super().__init__()
         self.out_channels = out_channels
         self.weight = torch.nn.Parameter(torch.randn(out_channels, in_channels, *kernel))
+        self.force_normalization = force_normalization
+        self.use_gan = use_gan
+        # Register the forward pre-hook
+        if self.use_gan and self.force_normalization:
+            self.register_forward_pre_hook(self._apply_forced_weight_normalization)
+
+    def _apply_forced_weight_normalization(self, module, input):
+        # Only apply during training
+        if self.training:
+            with torch.no_grad():
+                w = self.weight.to(torch.float32)
+                w_normalized = normalize(w)
+                self.weight.copy_(w_normalized)
 
     def forward(self, x, gain=1):
         w = self.weight.to(torch.float32)
-        if self.training:
+        if self.training and not self.use_gan:
             with torch.no_grad():
-                self.weight.copy_(normalize(w)) # forced weight normalization
-        w = normalize(w) # traditional weight normalization
-        w = w * (gain / np.sqrt(w[0].numel())) # magnitude-preserving scaling
+                self.weight.copy_(normalize(w))  # forced weight normalization
+        w = normalize(w)  # Traditional weight normalization
+        w = w * (gain / np.sqrt(w[0].numel()))  # Magnitude-preserving scaling
         w = w.to(x.dtype)
         if w.ndim == 2:
             return x @ w.t()
         assert w.ndim == 4
-        return torch.nn.functional.conv2d(x, w, padding=(w.shape[-1]//2,))
+        return torch.nn.functional.conv2d(x, w, padding=(w.shape[-1] // 2))
         
 #----------------------------------------------------------------------------
 # U-Net encoder/decoder block with optional self-attention (Figure 21).
@@ -607,3 +643,76 @@ class GenerativeDenoiser(torch.nn.Module):
         sigma_hat = sigma * (1 + self.gamma)
         y_hat = y + z * (sigma_hat ** 2 - sigma ** 2) ** 0.5
         return self.model(y_hat, sigma_hat, y, sigma, labels, return_logvar=return_logvar)
+
+#----------------------------------------------------------------------------
+# Discriminator.
+
+@persistence.persistent_class
+class DiscriminatorCondition(torch.nn.Module):
+    def __init__(self,
+        img_resolution,                 # Image resolution.
+        img_channels,                   # Image channels.
+        label_dim,                      # Class label dimensionality. 0 = unconditional.
+        use_fp16                = True, # Run the model at FP16 precision?
+        sigma_data              = 0.5,  # Expected standard deviation of the training data.
+        **unet_kwargs,                  # Keyword arguments for UNet.
+    ):
+        super().__init__()
+        self.img_resolution = img_resolution
+        self.img_channels = img_channels
+        self.label_dim = label_dim
+        self.use_fp16 = use_fp16
+        self.sigma_data = sigma_data
+        network_kwargs = dict(img_resolution=img_resolution, img_channels=img_channels, label_dim=label_dim, **unet_kwargs)
+        self.ctrl = UNetEncoder(**network_kwargs)
+        self.enc = UNetEncoder(**network_kwargs)
+        
+        # Scalar output.
+        x_in = torch.randn(1, img_channels, img_resolution, img_resolution)
+        c_noise = torch.randn(1, 1, 1, 1).flatten().log() / 4
+        class_labels = torch.eye(1, label_dim)
+        enc_x, _ = self.enc(x_in, c_noise, class_labels)
+        cout = enc_x.shape[1]
+        self.out_conv = MPConv(cout*2, 1, kernel=[])
+
+        # Disable inplace normalization.
+        def disable_inplace_normalization(m):
+            if isinstance(m, MPConv):
+                m.use_gan = True
+        self.apply(disable_inplace_normalization)
+
+    def forward(self, x, sigma, condition_x, condition_sigma, class_labels=None, force_fp32=False):
+        class_labels = None if self.label_dim == 0 else torch.zeros([1, self.label_dim], device=x.device) if class_labels is None else class_labels.to(torch.float32).reshape(-1, self.label_dim)
+        dtype = torch.float16 if (self.use_fp16 and not force_fp32 and x.device.type == 'cuda') else torch.float32
+        
+        # Controlnet forward.
+        condition_x = condition_x.to(torch.float32)
+        condition_sigma = condition_sigma.to(torch.float32).reshape(-1, 1, 1, 1)
+        c_skip, c_out, c_in, c_noise = self.preconditioning(condition_sigma)
+        x_in = (c_in * condition_x).to(dtype)
+        ctrl_x, ctrl_skips = self.ctrl(x_in, c_noise, class_labels)
+
+        # UNet encoder forward.
+        x = x.to(torch.float32)
+        sigma = sigma.to(torch.float32).reshape(-1, 1, 1, 1)
+        c_skip, c_out, c_in, c_noise = self.preconditioning(sigma)
+        x_in = (c_in * x).to(dtype)
+        enc_x, enc_skips = self.enc(x_in, c_noise, class_labels)
+
+        # MLP forward.
+        logits = F.adaptive_avg_pool2d(mp_cat(ctrl_x, enc_x), (1, 1)).flatten(1)     
+        logits = self.out_conv(logits)
+        return logits
+    
+    def preconditioning(self, sigma):
+        c_skip = self.sigma_data ** 2 / (sigma ** 2 + self.sigma_data ** 2)
+        c_out = sigma * self.sigma_data / (sigma ** 2 + self.sigma_data ** 2).sqrt()
+        c_in = 1 / (self.sigma_data ** 2 + sigma ** 2).sqrt()
+        c_noise = sigma.flatten().log() / 4
+        return c_skip, c_out, c_in, c_noise
+    
+    def init_from_pretrained(self, net: Precond):
+        unet = net.unet
+        self.enc.load_state_dict(unet.state_dict(), strict=False)
+        self.ctrl.load_state_dict(unet.state_dict(), strict=False)
+        return self

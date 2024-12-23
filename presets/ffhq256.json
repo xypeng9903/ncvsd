@@ -27,8 +27,11 @@
         "resblock_updown": true,
         "use_new_attention_order": false
     },
-    "g_lr_scaling": 0.01,
     "gamma": 0.414,
+    "g_lr_scaling": 0.01,
+    "d_lr_scaling": 0.01,
+    "gan_loss_scaling": 1,
+    "gan_warmup_batches": 1000,
     "lr_kwargs": {
         "ref_lr": 1e-4,
         "ref_batches": 0,
