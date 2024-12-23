@@ -13,4 +13,4 @@ torchrun --standalone --nproc_per_node=$NUM_GPUS train_edm2.py \
     --net="../model_zoo/ffhq_10m.pt" \
     --data="../data/edm2/ffhq256.zip" \
     --cond=False \
-    --batch=128
+    --batch=512
