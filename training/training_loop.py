@@ -82,7 +82,7 @@ class NCVSDLoss:
             return vsd_loss, None
         
         logits = discriminator(xt, t, y, sigma, labels)
-        gan_loss = F.binary_cross_entropy_with_logits(logits, torch.ones_like(logits))
+        gan_loss = F.binary_cross_entropy_with_logits(logits, torch.ones_like(logits), reduction='none')
         return vsd_loss, gan_loss
 
 #----------------------------------------------------------------------------
@@ -125,8 +125,8 @@ class DSMLoss:
         fake_logits = discriminator(fake_xt, t, y, sigma, labels)        
         
         dsm_loss = (weight_t / logvar.exp()) * (s - x.detach()) ** 2 + logvar
-        fake_loss = F.binary_cross_entropy_with_logits(fake_logits, torch.zeros_like(fake_logits))
-        real_loss = F.binary_cross_entropy_with_logits(real_logits, torch.ones_like(real_logits))
+        fake_loss = F.binary_cross_entropy_with_logits(fake_logits, torch.zeros_like(fake_logits), reduction='none')
+        real_loss = F.binary_cross_entropy_with_logits(real_logits, torch.ones_like(real_logits), reduction='none')
         return dsm_loss, fake_loss, real_loss
     
 #----------------------------------------------------------------------------
@@ -175,6 +175,7 @@ def training_loop(
     checkpoint_nimg     = 128<<20,   # Save state checkpoint every N training images. None = disable.
  
     loss_scaling        = 1,         # Loss scaling factor for reducing FP16 under/overflows.
+    d_loss_scaling      = 1,         # Scaling factor for the discriminator loss.
     gan_loss_scaling    = 1,         # Scaling factor for the GAN loss.
     force_finite        = True,      # Get rid of NaN/Inf gradients before feeding them to the optimizer.
     cudnn_benchmark     = True,      # Enable torch.backends.cudnn.benchmark?
@@ -373,8 +374,8 @@ def training_loop(
                     sigma=sigma,
                     labels=labels.to(device)
                 )
-                dsm_loss.sum().mul(loss_scaling / batch_gpu_total).backward()
-                (fake_loss + real_loss).mul(loss_scaling / batch_gpu_total).backward()
+                discriminator_loss = 0.5 * (fake_loss + real_loss) * d_loss_scaling
+                (dsm_loss + discriminator_loss).sum().mul(loss_scaling / batch_gpu_total).backward()
 
         # Score model optimization.
         lr = dnnlib.util.call_func_by_name(cur_nimg=state.cur_nimg, batch_size=batch_size, **lr_kwargs)

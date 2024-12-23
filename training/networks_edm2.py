@@ -655,7 +655,6 @@ class DiscriminatorCondition(torch.nn.Module):
         label_dim,                      # Class label dimensionality. 0 = unconditional.
         use_fp16                = True, # Run the model at FP16 precision?
         sigma_data              = 0.5,  # Expected standard deviation of the training data.
-        discriminator_channels  = 512,  # Intermediate dimensionality for MLP.
         **unet_kwargs,                  # Keyword arguments for UNet.
     ):
         super().__init__()
@@ -668,13 +667,13 @@ class DiscriminatorCondition(torch.nn.Module):
         self.ctrl = UNetEncoder(**network_kwargs)
         self.enc = UNetEncoder(**network_kwargs)
         
-        # MLP.
+        # Scalar output.
         x_in = torch.randn(1, img_channels, img_resolution, img_resolution)
         c_noise = torch.randn(1, 1, 1, 1).flatten().log() / 4
         class_labels = torch.eye(1, label_dim)
         enc_x, _ = self.enc(x_in, c_noise, class_labels)
         cout = enc_x.shape[1]
-        self.out_conv = MPConv(cout*2, discriminator_channels, kernel=[])
+        self.out_conv = MPConv(cout*2, 1, kernel=[])
 
         # Disable inplace normalization.
         def disable_inplace_normalization(m):
