@@ -81,7 +81,7 @@ class NCVSDLoss:
         if disable_gan:
             return vsd_loss, None
         
-        logits = discriminator(xt, t, y, sigma, labels)
+        logits = discriminator(xt, t, y, sigma, labels).view(-1, 1, 1, 1)
         gan_loss = F.binary_cross_entropy_with_logits(logits, torch.ones_like(logits), reduction='none')
         return vsd_loss, gan_loss
 
@@ -121,8 +121,8 @@ class DSMLoss:
         real_xt = images + torch.randn_like(images) * t
 
         s, logvar = score_model(fake_xt, t, y, sigma, labels, return_logvar=True)
-        real_logits = discriminator(real_xt, t, y, sigma, labels)
-        fake_logits = discriminator(fake_xt, t, y, sigma, labels)        
+        real_logits = discriminator(real_xt, t, y, sigma, labels).view(-1, 1, 1, 1)
+        fake_logits = discriminator(fake_xt, t, y, sigma, labels).view(-1, 1, 1, 1)        
         
         dsm_loss = (weight_t / logvar.exp()) * (s - x.detach()) ** 2 + logvar
         fake_loss = F.binary_cross_entropy_with_logits(fake_logits, torch.zeros_like(fake_logits), reduction='none')
