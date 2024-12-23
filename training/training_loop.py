@@ -117,16 +117,16 @@ class DSMLoss:
         t = (rnd_normal_t * self.P_std + self.P_mean).exp()
         weight_t = (t ** 2 + self.sigma_data ** 2) / (t * self.sigma_data) ** 2
         
-        xt_fake = x + torch.randn_like(x) * t
-        xt_real = images + torch.randn_like(images) * t
+        fake_xt = x + torch.randn_like(x) * t
+        real_xt = images + torch.randn_like(images) * t
 
-        s, logvar = score_model(xt_fake, t, y, sigma, labels, return_logvar=True)
-        logits_real = discriminator(xt_real, t, y, sigma, labels)
-        logits_fake = discriminator(xt_fake, t, y, sigma, labels)        
+        s, logvar = score_model(fake_xt, t, y, sigma, labels, return_logvar=True)
+        real_logits = discriminator(real_xt, t, y, sigma, labels)
+        fake_logits = discriminator(fake_xt, t, y, sigma, labels)        
         
         dsm_loss = (weight_t / logvar.exp()) * (s - x.detach()) ** 2 + logvar
-        fake_loss = F.binary_cross_entropy_with_logits(logits_fake, torch.zeros_like(logits_fake))
-        real_loss = F.binary_cross_entropy_with_logits(logits_real, torch.ones_like(logits_real))
+        fake_loss = F.binary_cross_entropy_with_logits(fake_logits, torch.zeros_like(fake_logits))
+        real_loss = F.binary_cross_entropy_with_logits(real_logits, torch.ones_like(real_logits))
         return dsm_loss, fake_loss, real_loss
     
 #----------------------------------------------------------------------------
