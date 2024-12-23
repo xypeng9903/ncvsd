@@ -1637,7 +1637,7 @@ class DiscriminatorCondition(th.nn.Module):
         # Reduce to scalar.
         logits = F.adaptive_avg_pool2d(th.cat([ctrl_h, h], dim=1), (1, 1)).flatten(1)
         logits = self.fc(logits)
-        return logits.view(-1, 1, 1, 1)
+        return logits
     
     def preconditioning(self, sigma):
         c_skip = 1.
