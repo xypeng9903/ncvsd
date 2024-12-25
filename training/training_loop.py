@@ -98,7 +98,7 @@ class NCVSDLoss:
 
 @persistence.persistent_class
 class DSMLoss:
-    def __init__(self, sigma_data = 0.5):
+    def __init__(self, sigma_data=0.5):
         self.sigma_data = sigma_data
 
     def __call__(
@@ -124,7 +124,7 @@ class DSMLoss:
 
 @persistence.persistent_class
 class DiscriminatorLoss:
-    def __init__(self, sigma_data = 0.5):
+    def __init__(self, sigma_data=0.5):
         self.sigma_data = sigma_data
 
     def __call__(
@@ -174,7 +174,7 @@ def training_loop(
     vsd_loss_kwargs           = dict(class_name='training.training_loop.NCVSDLoss'),
     dsm_loss_kwargs           = dict(class_name='training.training_loop.DSMLoss'),
     discriminator_loss_kwargs = dict(class_name='training.training_loop.DiscriminatorLoss'),
-    optimizer_kwargs          = dict(class_name='torch.optim.Adam', betas=(0.9, 0.99)),
+    optimizer_kwargs          = dict(class_name='torch.optim.Adam', betas=(0.9, 0.999), eps=1e-6),
     lr_kwargs                 = dict(func_name='training.training_loop.learning_rate_schedule'),
     ema_kwargs                = dict(class_name='training.phema.PowerFunctionEMA', stds=[0.050, 0.100]),
     gamma                     = 0.414,     # TODO.
@@ -411,6 +411,8 @@ def training_loop(
                 if param.grad is not None and force_finite:
                     torch.nan_to_num(param.grad, nan=0, posinf=0, neginf=0, out=param.grad)     
         s_optimizer.step()
+        
+        import ipdb; ipdb.set_trace()
 
         #-----------------------------------------------------------------------------------
         # Discriminator update.
