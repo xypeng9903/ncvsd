@@ -20,6 +20,7 @@ from torch_utils import training_stats
 from torch_utils import persistence
 from torch_utils import misc
 import torch.nn.functional as F
+import gc
 
 from training.networks_edm2 import PrecondCondition, GenerativeDenoiser, DiscriminatorCondition
 from torchvision.utils import save_image
@@ -341,6 +342,8 @@ def training_loop(
 
         # Save network snapshot and evaluate.
         if snapshot_nimg is not None and state.cur_nimg % snapshot_nimg == 0 and (state.cur_nimg != start_nimg or start_nimg == 0) and dist.get_rank() == 0:
+            gc.collect()
+            torch.cuda.empty_cache()
             ema_list = ema_generator.get()
             ema_list = ema_list if isinstance(ema_list, list) else [(ema_list, '')]
             for ema_net, ema_suffix in ema_list:
@@ -498,7 +501,6 @@ def training_loop(
         dist.print0(
             f'\rProgress: {state.cur_nimg} / {total_nimg} ({progress * 100:.2f} %)',
             f'| Estimated time: {dnnlib.util.format_time(estimated_time)}',
-            end='', flush=True
         )
         if dist.get_rank() == 0:
             writer.add_scalar('Loss/VSD', vsd_loss.mean().item(), state.cur_nimg)
