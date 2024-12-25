@@ -412,8 +412,6 @@ def training_loop(
                     torch.nan_to_num(param.grad, nan=0, posinf=0, neginf=0, out=param.grad)     
         s_optimizer.step()
         
-        import ipdb; ipdb.set_trace()
-
         #-----------------------------------------------------------------------------------
         # Discriminator update.
 
