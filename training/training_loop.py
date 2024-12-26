@@ -435,7 +435,8 @@ def training_loop(
                     sigma=sigma,
                     labels=labels.to(device)
                 )
-                discriminator_loss = 0.5 * (fake_loss + real_loss)
+                c, h, w = network_kwargs['in_channels'], network_kwargs['image_size'], network_kwargs['image_size']
+                discriminator_loss = 0.5 * (fake_loss + real_loss).repeat(1, c, h, w)
                 discriminator_loss.sum().mul(loss_scaling / batch_gpu_total).backward()
 
         # Discriminator optimization.
