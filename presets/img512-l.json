@@ -8,7 +8,7 @@
     },
     "gamma": 0.414,
     "g_lr_scaling": 0.01,
-    "d_lr_scaling": 1,
+    "d_lr_scaling": 0.01,
     "gan_loss_scaling": 1,
     "gan_warmup_batches": 1000,
     "vsd_loss_kwargs": {
