@@ -437,7 +437,8 @@ def training_loop(
                     sigma=sigma,
                     labels=labels.to(device)
                 )
-                discriminator_loss = 0.5 * (fake_loss + real_loss)
+                c, h, w = images.shape[1:]
+                discriminator_loss = 0.5 * (fake_loss + real_loss).repeat(1, c, h, w) # scaled by data dims
                 discriminator_loss.sum().mul(loss_scaling / batch_gpu_total).backward()
 
         # Discriminator optimization.
