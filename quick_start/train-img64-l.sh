@@ -1,7 +1,6 @@
 NUM_GPUS=$1
 BATCH_GPU=$2
 
-
 torchrun --standalone --nproc_per_node=$NUM_GPUS train_edm2.py \
     --preset="presets/img64-l.json" \
     --outdir="training-runs/img64-l" \
