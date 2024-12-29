@@ -26,11 +26,11 @@ warnings.filterwarnings('ignore', '`resume_download` is deprecated')
 #----------------------------------------------------------------------------
 # NCVSD unconditional generation.
 
+@torch.no_grad()
 def ncvsd_sampler(net: GenerativeDenoiser, noise, labels=None, ts=None):
     sigma = torch.ones(noise.shape[0], 1, 1, 1, device=noise.device) * net.init_sigma
     y = noise * sigma
-    with torch.no_grad():
-        x0 = net(y, sigma, labels, ts=ts)
+    x0 = net(y, sigma, labels, ts=ts)
     return x0
 
 #----------------------------------------------------------------------------
@@ -89,9 +89,8 @@ def generate_images(
             if encoder is None:
                 encoder = dnnlib.util.construct_class_by_name(class_name='training.encoders.StandardRGBEncoder')
     assert net is not None
-
     net.to(torch.float32)
-    net.model.convert_to_fp16()
+    net.convert_to_fp16()
 
     # Load guidance network.
     if isinstance(gnet, str):
