@@ -62,8 +62,7 @@ class NCVSDLoss:
             discriminator,
             y: torch.Tensor, 
             sigma: torch.Tensor,
-            labels: torch.Tensor = None,
-            disable_gan: bool = False
+            labels: torch.Tensor = None
     ):        
         x, logvar = generator(y, sigma, labels, return_logvar=True)
         
@@ -79,9 +78,6 @@ class NCVSDLoss:
             s = score_model(xt, t, y, sigma, labels)
 
         vsd_loss = (weight_t / logvar.exp()) * (x - (s0 - s + x).detach()) ** 2 + logvar
-        if disable_gan:
-            return vsd_loss, None
-        
         logits = discriminator(xt, t, y, sigma, labels).view(-1, 1, 1, 1)
         gan_loss = F.binary_cross_entropy_with_logits(logits, torch.ones_like(logits), reduction='none')
         return vsd_loss, gan_loss
@@ -148,8 +144,8 @@ class DiscriminatorLoss:
             x = generator(y, sigma, labels)
         rnd_normal_t = torch.randn([x.shape[0], 1, 1, 1], device=x.device)
         t = (rnd_normal_t * self.P_std + self.P_mean).exp()
-        fake_xt = x + torch.randn_like(x) * t
         real_xt = images + torch.randn_like(images) * t
+        fake_xt = x + torch.randn_like(x) * t
 
         real_logits = discriminator(real_xt, t, y, sigma, labels).view(-1, 1, 1, 1)
         fake_logits = discriminator(fake_xt, t, y, sigma, labels).view(-1, 1, 1, 1)        
@@ -473,10 +469,9 @@ def training_loop(
                     discriminator=ddp_discriminator,
                     y=y,
                     sigma=sigma,
-                    labels=labels.to(device),
-                    disable_gan=disable_gan
+                    labels=labels.to(device)
                 )
-                g_loss = vsd_loss if gan_loss is None else vsd_loss + gan_loss * gan_loss_scaling
+                g_loss = vsd_loss if disable_gan else vsd_loss + gan_loss * gan_loss_scaling
                 g_loss.sum().mul(loss_scaling / batch_gpu_total).backward()
 
         # Generator optimization.
@@ -505,8 +500,7 @@ def training_loop(
         )
         if dist.get_rank() == 0:
             writer.add_scalar('Loss/VSD', vsd_loss.mean().item(), state.cur_nimg)
-            if gan_loss is not None:
-                writer.add_scalar('Loss/GAN', gan_loss.mean().item(), state.cur_nimg)
+            writer.add_scalar('Loss/GAN', gan_loss.mean().item(), state.cur_nimg)
             writer.add_scalar('Loss/DSM', dsm_loss.mean().item(), state.cur_nimg)
             writer.add_scalar('Loss/Fake', fake_loss.mean().item(), state.cur_nimg)
             writer.add_scalar('Loss/Real', real_loss.mean().item(), state.cur_nimg)

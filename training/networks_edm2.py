@@ -699,7 +699,7 @@ class DiscriminatorCondition(torch.nn.Module):
         x_in = (c_in * x).to(dtype)
         enc_x, enc_skips = self.enc(x_in, c_noise, class_labels)
 
-        # MLP forward.
+        # Reduce to scalar.
         logits = F.adaptive_avg_pool2d(mp_cat(ctrl_x, enc_x), (1, 1)).flatten(1)     
         logits = self.out_conv(logits)
         return logits
