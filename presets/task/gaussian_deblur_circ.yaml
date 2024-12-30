@@ -1,0 +1,16 @@
+operator:
+  name: gaussian_blur_circ
+  kernel_size: 61
+  intensity: 3.0
+  channels: 3
+  img_dim: 256
+
+noise: 
+  name: gaussian
+  sigma: 0.05
+
+annealing:
+  steps: 100 
+  sigma_min: 0.002
+  sigma_max: 80.0
+  rho: 7.0
