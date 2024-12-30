@@ -1,16 +1,9 @@
 NUM_GPUS=$1
 BATCH_GPU=$2
 
-
 torchrun --standalone --nproc_per_node=$NUM_GPUS train_edm2.py \
-    --preset="presets/ffhq256.json" \
-    --outdir="training-runs/ffhq256" \
-    --ts="10,22,39" \
-    --batch-gpu=$BATCH_GPU \
-    --duration="8Mi" \
-    --checkpoint="128Ki" \
-    --snapshot="128Ki" \
-    --net="../model_zoo/ffhq_10m.pt" \
+    --preset="edm2-ffhq256-xs" \
+    --outdir="training-runs/edm2-ffhq256" \
     --data="../data/edm2/ffhq256.zip" \
-    --cond=False \
-    --batch=512
+    --batch-gpu=$BATCH_GPU \
+    --cond=False

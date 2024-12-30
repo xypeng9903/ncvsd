@@ -16,18 +16,29 @@ import torch
 import dnnlib
 from torch_utils import distributed as dist
 import training.training_loop
-import json
+
+#----------------------------------------------------------------------------
+# Configuration presets.
+
+config_presets = {
+    'edm2-ffhq256-xxs':    dnnlib.EasyDict(duration=2048<<20, batch=2048, channels=64,  lr=0.0170, decay=35000, dropout=0.00, P_mean=-0.8, P_std=1.6),
+    'edm2-ffhq256-xs':     dnnlib.EasyDict(duration=2048<<20, batch=2048, channels=128, lr=0.0120, decay=35000, dropout=0.00, P_mean=-0.8, P_std=1.6),
+    'edm2-ffhq256-s':      dnnlib.EasyDict(duration=1024<<20, batch=2048, channels=192, lr=0.0100, decay=35000, dropout=0.00, P_mean=-0.8, P_std=1.6),
+}
 
 #----------------------------------------------------------------------------
 # Setup arguments for training.training_loop.training_loop().
 
-def setup_training_config(preset: str, **opts):
+def setup_training_config(preset='edm2-img512-s', **opts):
     opts = dnnlib.EasyDict(opts)
     c = dnnlib.EasyDict()
 
     # Preset.
-    with open(preset, 'r') as f:
-        preset = json.load(f)
+    if preset not in config_presets:
+        raise click.ClickException(f'Invalid configuration preset "{preset}"')
+    for key, value in config_presets[preset].items():
+        if opts.get(key, None) is None:
+            opts[key] = value
 
     # Dataset.
     c.dataset_kwargs = dnnlib.EasyDict(class_name='training.dataset.ImageFolderDataset', path=opts.data, use_labels=opts.get('cond', True))
@@ -49,20 +60,10 @@ def setup_training_config(preset: str, **opts):
         raise click.ClickException(f'--data: Unsupported channel count {dataset_channels}')
 
     # Hyperparameters.
-    c.update(
-        total_nimg=opts.duration, 
-        batch_size=opts.batch, 
-        net=opts.net,
-        gamma=preset['gamma'],
-        g_lr_scaling=preset['g_lr_scaling'],
-        d_lr_scaling=preset['d_lr_scaling'],
-        gan_loss_scaling=preset['gan_loss_scaling'],
-        gan_warmup_batches=preset['gan_warmup_batches'],
-        eval_ts=parse_int_list(opts.ts) if opts.ts else None,
-    )
-    c.pretrained_kwargs = dnnlib.EasyDict(**preset['pretrained_kwargs'])
-    c.network_kwargs = dnnlib.EasyDict(**preset['network_kwargs'])
-    c.lr_kwargs = dnnlib.EasyDict(func_name='training.training_loop.learning_rate_schedule', **preset['lr_kwargs'])
+    c.update(total_nimg=opts.duration, batch_size=opts.batch)
+    c.network_kwargs = dnnlib.EasyDict(class_name='training.networks_edm2.Precond', model_channels=opts.channels, dropout=opts.dropout)
+    c.loss_kwargs = dnnlib.EasyDict(class_name='training.training_loop.EDM2Loss', P_mean=opts.P_mean, P_std=opts.P_std)
+    c.lr_kwargs = dnnlib.EasyDict(func_name='training.training_loop.learning_rate_schedule', ref_lr=opts.lr, ref_batches=opts.decay)
 
     # Performance-related options.
     c.batch_gpu = opts.get('batch_gpu', 0) or None
@@ -125,34 +126,15 @@ def parse_nimg(s):
     return int(s)
 
 #----------------------------------------------------------------------------
-# Parse a comma separated list of numbers or ranges and return a list of ints.
-# Example: '1,2,5-10' returns [1, 2, 5, 6, 7, 8, 9, 10]
-
-def parse_int_list(s):
-    if isinstance(s, list):
-        return s
-    ranges = []
-    range_re = re.compile(r'^(\d+)-(\d+)$')
-    for p in s.split(','):
-        m = range_re.match(p)
-        if m:
-            ranges.extend(range(int(m.group(1)), int(m.group(2))+1))
-        else:
-            ranges.append(int(p))
-    return ranges
-
-#----------------------------------------------------------------------------
 # Command line interface.
 
 @click.command()
 
 # Main options.
 @click.option('--outdir',           help='Where to save the results', metavar='DIR',            type=str, required=True)
-@click.option('--net',              help='Teacher EDM model', metavar='DIR',                    type=str, required=True)
 @click.option('--data',             help='Path to the dataset', metavar='ZIP|DIR',              type=str, required=True)
 @click.option('--cond',             help='Train class-conditional model', metavar='BOOL',       type=bool, default=True, show_default=True)
-@click.option('--preset',           help='Configuration preset', metavar='STR',                 type=str, required=True)
-@click.option('--ts',               help='Inference steps for evaluation', metavar='DIR',       type=str, default=None)
+@click.option('--preset',           help='Configuration preset', metavar='STR',                 type=str, default='edm2-img512-s', show_default=True)
 
 # Hyperparameters.
 @click.option('--duration',         help='Training duration', metavar='NIMG',                   type=parse_nimg, default=None)
