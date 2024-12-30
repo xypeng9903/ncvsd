@@ -15,7 +15,7 @@ from tasks import get_operator
 
 
 #----------------------------------------------------------------------------
-# Karras inference sigma
+# Karras inference sigma.
 
 def karras_sigma_sampler(steps, device, sigma_min=0.002, sigma_max=80.0, rho=7.0):
     ramp = torch.linspace(0, 1, steps, device=device)
