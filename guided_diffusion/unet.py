@@ -1546,7 +1546,8 @@ class GenerativeDenoiser(th.nn.Module):
         t_max_rho = t_max ** (1 / rho)
         t_min_rho = t_min ** (1 / rho)
         
-        xt = th.randn_like(y) * (t_max_rho + ts[0] / (steps - 1) * (t_min_rho - t_max_rho)) ** rho
+        x0 = self._forward(y, sigma, labels)
+        xt = x0 + th.randn_like(y) * (t_max_rho + ts[0] / (steps - 1) * (t_min_rho - t_max_rho)) ** rho
         for i in range(len(ts) - 1):
             t = (t_max_rho + ts[i] / (steps - 1) * (t_min_rho - t_max_rho)) ** rho
             sigma_eff = 1 / (1 / sigma ** 2 + 1 / t ** 2) ** 0.5
@@ -1554,7 +1555,6 @@ class GenerativeDenoiser(th.nn.Module):
             x0 = self._forward(y_eff, sigma_eff, labels)
             next_t = (t_max_rho + ts[i + 1] / (steps - 1) * (t_min_rho - t_max_rho)) ** rho
             xt = x0 + th.randn_like(x0) * next_t
-
         return x0
 
     def _forward(self, y, sigma, labels, return_logvar=False):
