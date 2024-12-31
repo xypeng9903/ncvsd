@@ -145,7 +145,8 @@ def cmdline(**opts):
         y = operator.forward(images)
         y = y + torch.randn_like(y) * sigma_y
         likelihood_step_fn = lambda x0, sigma: operator.proximal_generator(x0, y, sigma_y, sigma)
-        x0hat = pnp_ncvsd_sampler(net, images, sigmas, likelihood_step_fn, verbose=True, **preset.sampler)
+        noise = torch.randn_like(images)
+        x0hat = pnp_ncvsd_sampler(net, noise, sigmas, likelihood_step_fn, verbose=True, **preset.sampler)
         for j, x0hat in enumerate(x0hat):
             x0hat = encoder.decode(x0hat)
             img = transforms.ToPILImage()(x0hat)
