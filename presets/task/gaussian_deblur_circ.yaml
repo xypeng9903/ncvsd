@@ -16,6 +16,6 @@ annealing:
   rho: 7.0
 
 sampler:
-  ts: [10,20,39]
+  ts: [22,39]
   ema_sigma: 1.0
-  ema_decay: 0.99
+  ema_decay: 0.95

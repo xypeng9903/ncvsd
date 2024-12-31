@@ -35,7 +35,7 @@ def pnp_ncvsd_sampler(
     likelihood_step_fn,
     ts                  = None,
     daps                = False,
-    ema_sigma           = None,
+    ema_sigma           = 0,     # EMA sigma threshold. 0 means no EMA.
     ema_decay           = None,
     verbose             = False,
 ):
@@ -45,7 +45,7 @@ def pnp_ncvsd_sampler(
     x0 = None
     for step in pbar:
         sigma = torch.ones(noise.shape[0], 1, 1, 1, device=noise.device) * sigmas[step]
-        if ema_sigma is not None and sigma < ema_sigma and x0 is not None:
+        if sigma < ema_sigma and x0 is not None:
             x0 = x0 * ema_decay + net(u, sigma, ts=ts) * (1 - ema_decay) # Prior step.
         else:
             x0 = net(u, sigma, ts=ts) # Prior step.
@@ -96,7 +96,6 @@ def cmdline(**opts):
 
     """
     opts = dnnlib.EasyDict(opts)
-    os.makedirs(opts.outdir, exist_ok=True)
     
     #----------------------------------------------------------------------------
     # Main.
@@ -137,6 +136,10 @@ def cmdline(**opts):
     
     # Prepare annealing schedule.
     sigmas = karras_sigma_sampler(**preset.annealing, device=device)
+    
+    # Prepare output directory.
+    dist.print0(f'Create output directory {opts.outdir} ...')
+    os.makedirs(opts.outdir, exist_ok=True)
     
     # Inference.
     for i, batch in enumerate(tqdm.tqdm(dataloader)):
