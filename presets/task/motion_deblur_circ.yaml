@@ -10,12 +10,12 @@ noise:
   sigma: 0.05
 
 annealing:
-  steps: 100 
+  steps: 40 
   sigma_min: 0.002
   sigma_max: 80.0
   rho: 7.0
 
 sampler:
-  ts: [22,39]
+  ts: [18,39]
   ema_sigma: 1.0
   ema_decay: 0.95
