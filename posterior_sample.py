@@ -42,9 +42,10 @@ def pnp_ncvsd_sampler(
     pbar = tqdm.trange(len(sigmas) - 1) if verbose else range(len(sigmas) - 1)
     sigma = torch.ones(noise.shape[0], 1, 1, 1, device=noise.device) * sigmas[0]
     u = noise * sigma
+    x0 = None
     for step in pbar:
         sigma = torch.ones(noise.shape[0], 1, 1, 1, device=noise.device) * sigmas[step]
-        if ema_sigma is not None and sigma < ema_sigma:
+        if ema_sigma is not None and sigma < ema_sigma and x0 is not None:
             x0 = x0 * ema_decay + net(u, sigma, ts=ts) * (1 - ema_decay) # Prior step.
         else:
             x0 = net(u, sigma, ts=ts) # Prior step.
