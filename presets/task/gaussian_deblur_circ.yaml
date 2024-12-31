@@ -14,3 +14,8 @@ annealing:
   sigma_min: 0.002
   sigma_max: 80.0
   rho: 7.0
+
+sampler:
+  ts: [10,20,39]
+  ema_sigma: 1.0
+  ema_decay: 0.99

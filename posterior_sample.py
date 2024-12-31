@@ -35,15 +35,21 @@ def pnp_ncvsd_sampler(
     likelihood_step_fn,
     ts                  = None,
     daps                = False,
+    ema_sigma           = None,
+    ema_decay           = None,
     verbose             = False,
 ):
-    pbar = tqdm.trange(len(sigmas)) if verbose else range(len(sigmas))
+    pbar = tqdm.trange(len(sigmas) - 1) if verbose else range(len(sigmas) - 1)
     sigma = torch.ones(noise.shape[0], 1, 1, 1, device=noise.device) * sigmas[0]
     u = noise * sigma
     for step in pbar:
         sigma = torch.ones(noise.shape[0], 1, 1, 1, device=noise.device) * sigmas[step]
-        x0 = net(u, sigma, ts=ts) # Prior step.
-        u = likelihood_step_fn(x0, sigma) # Likelihood step.
+        if ema_sigma is not None and sigma < ema_sigma:
+            x0 = x0 * ema_decay + net(u, sigma, ts=ts) * (1 - ema_decay) # Prior step.
+        else:
+            x0 = net(u, sigma, ts=ts) # Prior step.
+        sigma_next = torch.ones(noise.shape[0], 1, 1, 1, device=noise.device) * sigmas[step + 1]
+        u = likelihood_step_fn(x0, sigma_next) # Likelihood step.
         if daps: # Forward diffusion.
             u = u + torch.randn_like(u) * sigmas[step + 1]       
     return x0
@@ -74,7 +80,6 @@ def parse_int_list(s):
 @click.option('--data',                     help='Path to the dataset', metavar='ZIP|DIR',                          type=str, required=True)
 @click.option('--preset',                   help='Configuration preset', metavar='STR',                             type=str, required=True)
 @click.option('--outdir',                   help='Where to save the output images', metavar='DIR',                  type=str, required=True)
-@click.option('--ts',                       help='Inference timesteps', metavar='INT',                              type=parse_int_list, default=None)
 @click.option('--seeds',                    help='List of random seeds (e.g. 1,2,5-10)', metavar='LIST',            type=parse_int_list, default='16-19', show_default=True)
 @click.option('--batch', 'max_batch_size',  help='Maximum batch size', metavar='INT',                               type=click.IntRange(min=1), default=32, show_default=True)
 @click.option('--class', 'class_idx',       help='Class label  [default: random]', metavar='INT',                   type=click.IntRange(min=0), default=None)
@@ -139,7 +144,7 @@ def cmdline(**opts):
         y = operator.forward(images)
         y = y + torch.randn_like(y) * sigma_y
         likelihood_step_fn = lambda x0, sigma: operator.proximal_generator(x0, y, sigma_y, sigma)
-        x0hat = pnp_ncvsd_sampler(net, images, sigmas, likelihood_step_fn, ts=opts.ts, verbose=True)
+        x0hat = pnp_ncvsd_sampler(net, images, sigmas, likelihood_step_fn, verbose=True, **preset.sampler)
         for j, x0hat in enumerate(x0hat):
             x0hat = encoder.decode(x0hat)
             img = transforms.ToPILImage()(x0hat)
