@@ -21,9 +21,8 @@ import training.training_loop
 # Configuration presets.
 
 config_presets = {
-    'edm2-ffhq256-xxs':    dnnlib.EasyDict(duration=2048<<20, batch=2048, channels=64,  lr=0.0170, decay=35000, dropout=0.00, P_mean=-0.8, P_std=1.6),
-    'edm2-ffhq256-xs':     dnnlib.EasyDict(duration=2048<<20, batch=2048, channels=128, lr=0.0120, decay=35000, dropout=0.00, P_mean=-0.8, P_std=1.6),
-    'edm2-ffhq256-s':      dnnlib.EasyDict(duration=1024<<20, batch=2048, channels=192, lr=0.0100, decay=35000, dropout=0.00, P_mean=-0.8, P_std=1.6),
+    'edm2-ffhq256-xs':     dnnlib.EasyDict(duration=256<<20, batch=256, channels=128, lr=0.0012, decay=35000, dropout=0.00, P_mean=-0.8, P_std=1.6),
+    'edm2-ffhq256-s':      dnnlib.EasyDict(duration=128<<20, batch=256, channels=192, lr=0.0010, decay=35000, dropout=0.00, P_mean=-0.8, P_std=1.6),
 }
 
 #----------------------------------------------------------------------------
