@@ -22,7 +22,8 @@ class PhaseRetrieval(NonLinearOperator):
         amplitude = fft2_m(padded).abs()
         return amplitude
 
-    def proximal_generator(self, x, y, sigma, rho, gamma=1e-3, num_iters=100):
+    @torch.enable_grad()
+    def proximal_generator(self, x, y, sigma, rho, gamma=5e-3, num_iters=100):
         z = x
         z.requires_grad_()
         for _ in range(num_iters):
