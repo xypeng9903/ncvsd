@@ -19,19 +19,102 @@ import PIL.Image
 import dnnlib
 from torch_utils import distributed as dist
 
-from guided_diffusion.unet import GenerativeDenoiser
-
 warnings.filterwarnings('ignore', '`resume_download` is deprecated')
+warnings.filterwarnings('ignore', 'You are using `torch.load` with `weights_only=False`')
+warnings.filterwarnings('ignore', '1Torch was not compiled with flash attention')
 
 #----------------------------------------------------------------------------
-# NCVSD unconditional generation.
+# Configuration presets.
 
-@torch.no_grad()
-def ncvsd_sampler(net: GenerativeDenoiser, noise, labels=None, ts=None):
-    sigma = torch.ones(noise.shape[0], 1, 1, 1, device=noise.device) * net.init_sigma
-    y = noise * sigma
-    x0 = net(y, sigma, labels, ts=ts)
-    return x0
+model_root = 'https://nvlabs-fi-cdn.nvidia.com/edm2/posthoc-reconstructions'
+
+config_presets = {
+    'edm2-img512-xs-fid':              dnnlib.EasyDict(net=f'{model_root}/edm2-img512-xs-2147483-0.135.pkl'),      # fid = 3.53
+    'edm2-img512-xs-dino':             dnnlib.EasyDict(net=f'{model_root}/edm2-img512-xs-2147483-0.200.pkl'),      # fd_dinov2 = 103.39
+    'edm2-img512-s-fid':               dnnlib.EasyDict(net=f'{model_root}/edm2-img512-s-2147483-0.130.pkl'),       # fid = 2.56
+    'edm2-img512-s-dino':              dnnlib.EasyDict(net=f'{model_root}/edm2-img512-s-2147483-0.190.pkl'),       # fd_dinov2 = 68.64
+    'edm2-img512-m-fid':               dnnlib.EasyDict(net=f'{model_root}/edm2-img512-m-2147483-0.100.pkl'),       # fid = 2.25
+    'edm2-img512-m-dino':              dnnlib.EasyDict(net=f'{model_root}/edm2-img512-m-2147483-0.155.pkl'),       # fd_dinov2 = 58.44
+    'edm2-img512-l-fid':               dnnlib.EasyDict(net=f'{model_root}/edm2-img512-l-1879048-0.085.pkl'),       # fid = 2.06
+    'edm2-img512-l-dino':              dnnlib.EasyDict(net=f'{model_root}/edm2-img512-l-1879048-0.155.pkl'),       # fd_dinov2 = 52.25
+    'edm2-img512-xl-fid':              dnnlib.EasyDict(net=f'{model_root}/edm2-img512-xl-1342177-0.085.pkl'),      # fid = 1.96
+    'edm2-img512-xl-dino':             dnnlib.EasyDict(net=f'{model_root}/edm2-img512-xl-1342177-0.155.pkl'),      # fd_dinov2 = 45.96
+    'edm2-img512-xxl-fid':             dnnlib.EasyDict(net=f'{model_root}/edm2-img512-xxl-0939524-0.070.pkl'),     # fid = 1.91
+    'edm2-img512-xxl-dino':            dnnlib.EasyDict(net=f'{model_root}/edm2-img512-xxl-0939524-0.150.pkl'),     # fd_dinov2 = 42.84
+    'edm2-img64-s-fid':                dnnlib.EasyDict(net=f'{model_root}/edm2-img64-s-1073741-0.075.pkl'),        # fid = 1.58
+    'edm2-img64-m-fid':                dnnlib.EasyDict(net=f'{model_root}/edm2-img64-m-2147483-0.060.pkl'),        # fid = 1.43
+    'edm2-img64-l-fid':                dnnlib.EasyDict(net=f'{model_root}/edm2-img64-l-1073741-0.040.pkl'),        # fid = 1.33
+    'edm2-img64-xl-fid':               dnnlib.EasyDict(net=f'{model_root}/edm2-img64-xl-0671088-0.040.pkl'),       # fid = 1.33
+    'edm2-img512-xs-guid-fid':         dnnlib.EasyDict(net=f'{model_root}/edm2-img512-xs-2147483-0.045.pkl',       gnet=f'{model_root}/edm2-img512-xs-uncond-2147483-0.045.pkl', guidance=1.40), # fid = 2.91
+    'edm2-img512-xs-guid-dino':        dnnlib.EasyDict(net=f'{model_root}/edm2-img512-xs-2147483-0.150.pkl',       gnet=f'{model_root}/edm2-img512-xs-uncond-2147483-0.150.pkl', guidance=1.70), # fd_dinov2 = 79.94
+    'edm2-img512-s-guid-fid':          dnnlib.EasyDict(net=f'{model_root}/edm2-img512-s-2147483-0.025.pkl',        gnet=f'{model_root}/edm2-img512-xs-uncond-2147483-0.025.pkl', guidance=1.40), # fid = 2.23
+    'edm2-img512-s-guid-dino':         dnnlib.EasyDict(net=f'{model_root}/edm2-img512-s-2147483-0.085.pkl',        gnet=f'{model_root}/edm2-img512-xs-uncond-2147483-0.085.pkl', guidance=1.90), # fd_dinov2 = 52.32
+    'edm2-img512-m-guid-fid':          dnnlib.EasyDict(net=f'{model_root}/edm2-img512-m-2147483-0.030.pkl',        gnet=f'{model_root}/edm2-img512-xs-uncond-2147483-0.030.pkl', guidance=1.20), # fid = 2.01
+    'edm2-img512-m-guid-dino':         dnnlib.EasyDict(net=f'{model_root}/edm2-img512-m-2147483-0.015.pkl',        gnet=f'{model_root}/edm2-img512-xs-uncond-2147483-0.015.pkl', guidance=2.00), # fd_dinov2 = 41.98
+    'edm2-img512-l-guid-fid':          dnnlib.EasyDict(net=f'{model_root}/edm2-img512-l-1879048-0.015.pkl',        gnet=f'{model_root}/edm2-img512-xs-uncond-2147483-0.015.pkl', guidance=1.20), # fid = 1.88
+    'edm2-img512-l-guid-dino':         dnnlib.EasyDict(net=f'{model_root}/edm2-img512-l-1879048-0.035.pkl',        gnet=f'{model_root}/edm2-img512-xs-uncond-2147483-0.035.pkl', guidance=1.70), # fd_dinov2 = 38.20
+    'edm2-img512-xl-guid-fid':         dnnlib.EasyDict(net=f'{model_root}/edm2-img512-xl-1342177-0.020.pkl',       gnet=f'{model_root}/edm2-img512-xs-uncond-2147483-0.020.pkl', guidance=1.20), # fid = 1.85
+    'edm2-img512-xl-guid-dino':        dnnlib.EasyDict(net=f'{model_root}/edm2-img512-xl-1342177-0.030.pkl',       gnet=f'{model_root}/edm2-img512-xs-uncond-2147483-0.030.pkl', guidance=1.70), # fd_dinov2 = 35.67
+    'edm2-img512-xxl-guid-fid':        dnnlib.EasyDict(net=f'{model_root}/edm2-img512-xxl-0939524-0.015.pkl',      gnet=f'{model_root}/edm2-img512-xs-uncond-2147483-0.015.pkl', guidance=1.20), # fid = 1.81
+    'edm2-img512-xxl-guid-dino':       dnnlib.EasyDict(net=f'{model_root}/edm2-img512-xxl-0939524-0.015.pkl',      gnet=f'{model_root}/edm2-img512-xs-uncond-2147483-0.015.pkl', guidance=1.70), # fd_dinov2 = 33.09
+    'edm2-img512-s-autog-fid':         dnnlib.EasyDict(net=f'{model_root}/edm2-img512-s-2147483-0.070.pkl',        gnet=f'{model_root}/edm2-img512-xs-0134217-0.125.pkl',        guidance=2.10), # fid = 1.34
+    'edm2-img512-s-autog-dino':        dnnlib.EasyDict(net=f'{model_root}/edm2-img512-s-2147483-0.120.pkl',        gnet=f'{model_root}/edm2-img512-xs-0134217-0.165.pkl',        guidance=2.45), # fd_dinov2 = 36.67
+    'edm2-img512-xxl-autog-fid':       dnnlib.EasyDict(net=f'{model_root}/edm2-img512-xxl-0939524-0.075.pkl',      gnet=f'{model_root}/edm2-img512-m-0268435-0.155.pkl',         guidance=2.05), # fid = 1.25
+    'edm2-img512-xxl-autog-dino':      dnnlib.EasyDict(net=f'{model_root}/edm2-img512-xxl-0939524-0.130.pkl',      gnet=f'{model_root}/edm2-img512-m-0268435-0.205.pkl',         guidance=2.30), # fd_dinov2 = 24.18
+    'edm2-img512-s-uncond-autog-fid':  dnnlib.EasyDict(net=f'{model_root}/edm2-img512-s-uncond-2147483-0.070.pkl', gnet=f'{model_root}/edm2-img512-xs-uncond-0134217-0.110.pkl', guidance=2.85), # fid = 3.86
+    'edm2-img512-s-uncond-autog-dino': dnnlib.EasyDict(net=f'{model_root}/edm2-img512-s-uncond-2147483-0.090.pkl', gnet=f'{model_root}/edm2-img512-xs-uncond-0134217-0.125.pkl', guidance=2.90), # fd_dinov2 = 90.39
+    'edm2-img64-s-autog-fid':          dnnlib.EasyDict(net=f'{model_root}/edm2-img64-s-1073741-0.045.pkl',         gnet=f'{model_root}/edm2-img64-xs-0134217-0.110.pkl',         guidance=1.70), # fid = 1.01
+    'edm2-img64-s-autog-dino':         dnnlib.EasyDict(net=f'{model_root}/edm2-img64-s-1073741-0.105.pkl',         gnet=f'{model_root}/edm2-img64-xs-0134217-0.175.pkl',         guidance=2.20), # fd_dinov2 = 31.85
+}
+
+#----------------------------------------------------------------------------
+# EDM sampler from the paper
+# "Elucidating the Design Space of Diffusion-Based Generative Models",
+# extended to support classifier-free guidance.
+
+def edm_sampler(
+    net, noise, labels=None, gnet=None,
+    num_steps=32, sigma_min=0.002, sigma_max=80, rho=7, guidance=1,
+    S_churn=0, S_min=0, S_max=float('inf'), S_noise=1,
+    dtype=torch.float32, randn_like=torch.randn_like,
+):
+    # Guided denoiser.
+    def denoise(x, t):
+        Dx = net(x, t, labels).to(dtype)
+        if guidance == 1:
+            return Dx
+        ref_Dx = gnet(x, t, labels).to(dtype)
+        return ref_Dx.lerp(Dx, guidance)
+
+    # Time step discretization.
+    step_indices = torch.arange(num_steps, dtype=dtype, device=noise.device)
+    t_steps = (sigma_max ** (1 / rho) + step_indices / (num_steps - 1) * (sigma_min ** (1 / rho) - sigma_max ** (1 / rho))) ** rho
+    t_steps = torch.cat([t_steps, torch.zeros_like(t_steps[:1])]) # t_N = 0
+
+    # Main sampling loop.
+    x_next = noise.to(dtype) * t_steps[0]
+    for i, (t_cur, t_next) in enumerate(zip(t_steps[:-1], t_steps[1:])): # 0, ..., N-1
+        x_cur = x_next
+
+        # Increase noise temporarily.
+        if S_churn > 0 and S_min <= t_cur <= S_max:
+            gamma = min(S_churn / num_steps, np.sqrt(2) - 1)
+            t_hat = t_cur + gamma * t_cur
+            x_hat = x_cur + (t_hat ** 2 - t_cur ** 2).sqrt() * S_noise * randn_like(x_cur)
+        else:
+            t_hat = t_cur
+            x_hat = x_cur
+
+        # Euler step.
+        d_cur = (x_hat - denoise(x_hat, t_hat)) / t_hat
+        x_next = x_hat + (t_next - t_hat) * d_cur
+
+        # Apply 2nd order correction.
+        if i < num_steps - 1:
+            d_prime = (x_next - denoise(x_next, t_next)) / t_next
+            x_next = x_hat + (t_next - t_hat) * (0.5 * d_cur + 0.5 * d_prime)
+
+    return x_next
 
 #----------------------------------------------------------------------------
 # Wrapper for torch.Generator that allows specifying a different random seed
@@ -60,7 +143,7 @@ class StackedRandomGenerator:
 
 def generate_images(
     net,                                        # Main network. Path, URL, or torch.nn.Module.
-    gnet                = None,                 # Reference network for guidance. None = same as main network.
+    gnet                = None,                 # Guiding network. None = same as main network.
     encoder             = None,                 # Instance of training.encoders.Encoder. None = load from network pickle.
     outdir              = None,                 # Where to save the output images. None = do not save.
     subdirs             = False,                # Create subdirectory for every 1000 seeds?
@@ -70,7 +153,7 @@ def generate_images(
     encoder_batch_size  = 4,                    # Maximum batch size for the encoder. None = default.
     verbose             = True,                 # Enable status prints?
     device              = torch.device('cuda'), # Which compute device to use.
-    sampler_fn          = ncvsd_sampler,        # Which sampler function to use.
+    sampler_fn          = edm_sampler,          # Which sampler function to use.
     **sampler_kwargs,                           # Additional arguments for the sampler function.
 ):
     # Rank 0 goes first.
@@ -80,7 +163,7 @@ def generate_images(
     # Load main network.
     if isinstance(net, str):
         if verbose:
-            dist.print0(f'Loading network from {net} ...')
+            dist.print0(f'Loading main network from {net} ...')
         with dnnlib.util.open_url(net, verbose=(verbose and dist.get_rank() == 0)) as f:
             data = pickle.load(f)
         net = data['ema'].to(device)
@@ -89,13 +172,11 @@ def generate_images(
             if encoder is None:
                 encoder = dnnlib.util.construct_class_by_name(class_name='training.encoders.StandardRGBEncoder')
     assert net is not None
-    net.to(torch.float32)
-    net.convert_to_fp16()
 
     # Load guidance network.
     if isinstance(gnet, str):
         if verbose:
-            dist.print0(f'Loading guidance network from {gnet} ...')
+            dist.print0(f'Loading guiding network from {gnet} ...')
         with dnnlib.util.open_url(gnet, verbose=(verbose and dist.get_rank() == 0)) as f:
             gnet = pickle.load(f)['ema'].to(device)
     if gnet is None:
@@ -142,11 +223,8 @@ def generate_images(
                             r.labels[:, class_idx] = 1
 
                     # Generate images.
-                    ts = sampler_kwargs.get('ts', None)
-                    if ts is not None:
-                        ts = parse_int_list(ts)
-                        sampler_kwargs['ts'] = ts
-                    latents = dnnlib.util.call_func_by_name(func_name=sampler_fn, net=net, noise=r.noise, labels=r.labels, **sampler_kwargs)
+                    latents = dnnlib.util.call_func_by_name(func_name=sampler_fn, net=net, noise=r.noise,
+                        labels=r.labels, gnet=gnet, randn_like=rnd.randn_like, **sampler_kwargs)
                     r.images = encoder.decode(latents)
 
                     # Save images.
@@ -183,15 +261,26 @@ def parse_int_list(s):
 # Command line interface.
 
 @click.command()
-@click.option('--net',                      help='Network pickle filename', metavar='PATH|URL',                     type=str, default=None)
+@click.option('--preset',                   help='Configuration preset', metavar='STR',                             type=str, default=None)
+@click.option('--net',                      help='Main network pickle filename', metavar='PATH|URL',                type=str, default=None)
+@click.option('--gnet',                     help='Guiding network pickle filename', metavar='PATH|URL',             type=str, default=None)
 @click.option('--outdir',                   help='Where to save the output images', metavar='DIR',                  type=str, required=True)
 @click.option('--subdirs',                  help='Create subdirectory for every 1000 seeds',                        is_flag=True)
 @click.option('--seeds',                    help='List of random seeds (e.g. 1,2,5-10)', metavar='LIST',            type=parse_int_list, default='16-19', show_default=True)
 @click.option('--class', 'class_idx',       help='Class label  [default: random]', metavar='INT',                   type=click.IntRange(min=0), default=None)
 @click.option('--batch', 'max_batch_size',  help='Maximum batch size', metavar='INT',                               type=click.IntRange(min=1), default=32, show_default=True)
-@click.option('--ts',                       help='Inference timesteps', metavar='INT',                              type=str, default=None)
 
-def cmdline(**opts):
+@click.option('--steps', 'num_steps',       help='Number of sampling steps', metavar='INT',                         type=click.IntRange(min=1), default=32, show_default=True)
+@click.option('--sigma_min',                help='Lowest noise level', metavar='FLOAT',                             type=click.FloatRange(min=0, min_open=True), default=0.002, show_default=True)
+@click.option('--sigma_max',                help='Highest noise level', metavar='FLOAT',                            type=click.FloatRange(min=0, min_open=True), default=80, show_default=True)
+@click.option('--rho',                      help='Time step exponent', metavar='FLOAT',                             type=click.FloatRange(min=0, min_open=True), default=7, show_default=True)
+@click.option('--guidance',                 help='Guidance strength  [default: 1; no guidance]', metavar='FLOAT',   type=float, default=None)
+@click.option('--S_churn', 'S_churn',       help='Stochasticity strength', metavar='FLOAT',                         type=click.FloatRange(min=0), default=0, show_default=True)
+@click.option('--S_min', 'S_min',           help='Stoch. min noise level', metavar='FLOAT',                         type=click.FloatRange(min=0), default=0, show_default=True)
+@click.option('--S_max', 'S_max',           help='Stoch. max noise level', metavar='FLOAT',                         type=click.FloatRange(min=0), default='inf', show_default=True)
+@click.option('--S_noise', 'S_noise',       help='Stoch. noise inflation', metavar='FLOAT',                         type=float, default=1, show_default=True)
+
+def cmdline(preset, **opts):
     """Generate random images using the given model.
 
     Examples:
@@ -207,9 +296,22 @@ def cmdline(**opts):
     """
     opts = dnnlib.EasyDict(opts)
 
+    # Apply preset.
+    if preset is not None:
+        if preset not in config_presets:
+            raise click.ClickException(f'Invalid configuration preset "{preset}"')
+        for key, value in config_presets[preset].items():
+            if opts[key] is None:
+                opts[key] = value
+
     # Validate options.
     if opts.net is None:
-        raise click.ClickException('Please specify using --net')
+        raise click.ClickException('Please specify either --preset or --net')
+    if opts.guidance is None or opts.guidance == 1:
+        opts.guidance = 1
+        opts.gnet = None
+    elif opts.gnet is None:
+        raise click.ClickException('Please specify --gnet when using guidance')
 
     # Generate.
     dist.init()

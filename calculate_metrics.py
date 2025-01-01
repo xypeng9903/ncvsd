@@ -345,7 +345,6 @@ def calc(ref_path, metrics, **opts):
 @cmdline.command()
 @click.option('--net',                      help='Network pickle filename', metavar='PATH|URL',             type=str, required=True)
 @click.option('--ref', 'ref_path',          help='Dataset reference statistics ', metavar='PKL|NPZ|URL',    type=str, required=True)
-@click.option('--ts',                       help='Inference steps for evaluation', metavar='FLOAT',         type=str, required=True)
 @click.option('--metrics',                  help='List of metrics to compute', metavar='LIST',              type=parse_metric_list, default='fid,fd_dinov2', show_default=True)
 @click.option('--num', 'num_images',        help='Number of images to generate', metavar='INT',             type=click.IntRange(min=2), default=50000, show_default=True)
 @click.option('--seed',                     help='Random seed for the first image', metavar='INT',          type=int, default=0, show_default=True)
