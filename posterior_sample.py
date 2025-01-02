@@ -126,8 +126,6 @@ def cmdline(**opts):
             if encoder is None:
                 encoder = dnnlib.util.construct_class_by_name(class_name='training.encoders.StandardRGBEncoder')
     assert net is not None
-    net.to(torch.float32)
-    net.convert_to_fp16().eval()
     
     # Prepare operator.
     dist.print0(f'Operator: {preset.operator}')
