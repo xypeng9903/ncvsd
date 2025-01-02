@@ -10,7 +10,7 @@ import yaml
 from torchvision import transforms
 import os
 
-from guided_diffusion.unet import GenerativeDenoiser
+from training.networks_edm2 import GenerativeDenoiser
 from tasks import get_operator
 
 
