@@ -64,7 +64,10 @@ def setup_training_config(preset: str, **opts):
     c.vsd_loss_kwargs = dnnlib.EasyDict(class_name='training.training_loop.NCVSDLoss', **preset['vsd_loss_kwargs'])
     c.dsm_loss_kwargs = dnnlib.EasyDict(class_name='training.training_loop.DSMLoss', **preset['dsm_loss_kwargs'])
     c.lr_kwargs = dnnlib.EasyDict(func_name='training.training_loop.learning_rate_schedule', **preset['lr_kwargs'])
-
+    c.optimizer_kwargs = dnnlib.EasyDict(class_name='torch.optim.Adam', betas=(0.9, 0.99))
+    if preset.get('optimizer_kwargs', None) is not None:
+        c.optimizer_kwargs.update(preset['optimizer_kwargs'])
+    
     # Performance-related options.
     c.batch_gpu = opts.get('batch_gpu', 0) or None
     c.network_kwargs.use_fp16 = opts.get('fp16', True)
