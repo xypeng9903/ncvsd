@@ -6,6 +6,7 @@ torchrun --standalone --nproc_per_node=$NUM_GPUS train_edm2.py \
     --outdir="training-runs/ffhq256-xs" \
     --net="../model_zoo/edm2/edm2-ffhq256.pkl" \
     --data="../data/edm2/ffhq256.zip" \
+    --cond=False \
     --batch-gpu=$BATCH_GPU \
     --batch=256 \
     --duration="4Mi" \
