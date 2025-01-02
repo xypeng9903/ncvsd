@@ -1,6 +1,6 @@
 ## Requirements
 * 64-bit Python 3.9 and PyTorch 2.1 (or later). See https://pytorch.org for PyTorch install instructions.
-* Python libraries: `pip install click Pillow psutil requests scipy tqdm diffusers tensorboard`
+* Python libraries: `pip3 install click Pillow psutil requests scipy tqdm accelerate diffusers tensorboard`
 
 ## Data and pretrained EDM2 models
 Follow the instructions in [EDM2](https://github.com/NVlabs/edm2?tab=readme-ov-file#preparing-datasets) to prepare the following zip files into the `../data/edm2` folder:
