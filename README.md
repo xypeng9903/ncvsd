@@ -3,12 +3,12 @@
 * Python libraries: `pip install click Pillow psutil requests scipy tqdm diffusers tensorboard`
 
 ## Data and pretrained EDM2 models
-Follow the instructions detailed in the [EDM2 codebase](https://github.com/NVlabs/edm2?tab=readme-ov-file#preparing-datasets) by preparing the following zip files into the `../data/edm2` folder:
+Follow the instructions in [EDM2](https://github.com/NVlabs/edm2?tab=readme-ov-file#preparing-datasets) to prepare the following zip files into the `../data/edm2` folder:
 - `img64.zip`
 - `img512.zip`
 - `img512-sd.zip`
 
-Download pretrained EDM2 models into `../model_zoo/edm2` from the links listed in `quick_start/edm2.txt`.
+Download pretrained EDM2 models into `../model_zoo/edm2` folder from the links listed in `quick_start/edm2.txt`.
 
 ## Training
 Start training by running
