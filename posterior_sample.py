@@ -47,7 +47,7 @@ def pnp_ncvsd_sampler(
     x0 = None
     for step in pbar:
         sigma = torch.ones(noise.shape[0], 1, 1, 1, device=noise.device) * sigmas[step]
-        if sigma < ema_sigma and x0 is not None:
+        if sigmas[step] < ema_sigma and x0 is not None:
             x0 = x0 * ema_decay + net(u, sigma, ts=ts) * (1 - ema_decay) # Prior step.
         else:
             x0 = net(u, sigma, ts=ts) # Prior step.
@@ -71,16 +71,15 @@ def lgvd_proximal_generator(
     steps     = 100, 
     base_lr   = 0.1
 ):
-    sigma_y, sigma = sigma_y.item(), sigma.item()
     base_lr = base_lr * sigma_y ** 2
-    lr = base_lr / (1 + base_lr / sigma ** 2)
+    lr = (base_lr / (1 + base_lr / sigma ** 2)).mean().cpu().numpy()
     x = x0.clone().detach().requires_grad_(True)
     optimizer = torch.optim.SGD([x], lr)
     for _ in range(steps):
         optimizer.zero_grad()
         loss = (
-            ((operator(x) - y) ** 2).sum() / (2 * sigma_y **2) + 
-            ((x - x0.detach()) ** 2).sum() / (2 * sigma ** 2)
+            ((operator(x) - y) ** 2 / (2 * sigma_y **2)).sum() + 
+            ((x - x0.detach()) ** 2 / (2 * sigma ** 2)).sum() 
         )
         loss.backward()
         optimizer.step()
