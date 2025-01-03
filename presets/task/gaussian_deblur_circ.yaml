@@ -22,4 +22,4 @@ sampler:
 
 latent_lgvd:
   steps: 100
-  base_lr: 0.1
+  base_lr: 0.01
