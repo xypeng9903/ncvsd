@@ -9,6 +9,8 @@ from torch_utils import distributed as dist
 import yaml
 from torchvision import transforms
 import os
+import numpy as np
+from torchvision.transforms import Resize
 
 from training.networks_edm2 import GenerativeDenoiser
 from tasks import get_operator
@@ -55,6 +57,40 @@ def pnp_ncvsd_sampler(
             u = u + torch.randn_like(u) * sigmas[step + 1]       
     return x0
 
+#----------------------------------------------------------------------------
+# Proximal generator using langevin dynamics for latent space inference.
+# (modified from https://github.com/zhangbingliang2019/DAPS/blob/25471a8d7c3416995b88243355dd677648ead6ef/sampler.py#L216)
+
+@torch.enable_grad()
+def lgvd_proximal_generator(
+    x0, 
+    y, 
+    sigma_y, 
+    operator, 
+    sigma,  
+    steps     = 100, 
+    base_lr   = 0.1
+):
+    sigma_y, sigma = sigma_y.item(), sigma.item()
+    base_lr = base_lr * sigma_y ** 2
+    lr = base_lr / (1 + base_lr / sigma ** 2)
+    x = x0.clone().detach().requires_grad_(True)
+    optimizer = torch.optim.SGD([x], lr)
+    for _ in range(steps):
+        optimizer.zero_grad()
+        loss = (
+            ((operator(x) - y) ** 2).sum() / (2 * sigma_y **2) + 
+            ((x - x0.detach()) ** 2).sum() / (2 * sigma ** 2)
+        )
+        loss.backward()
+        optimizer.step()
+        with torch.no_grad():
+            epsilon = torch.randn_like(x)
+            x.data = x.data + np.sqrt(2 * lr) * epsilon
+        if torch.isnan(x).any():
+            return torch.zeros_like(x)
+        print(f"{loss.item():.4f}", end='\r')
+    return x.detach()
 
 #----------------------------------------------------------------------------
 # Parse a comma separated list of numbers or ranges and return a list of ints.
@@ -74,9 +110,16 @@ def parse_int_list(s):
     return ranges
 
 #----------------------------------------------------------------------------
-# Command line interface.
+# Main command line.
 
-@click.command()
+@click.group()
+def cmdline():
+    """Solving inverse problems using PnP-NCVSD."""
+
+#----------------------------------------------------------------------------
+# 'pixel' subcommand.
+
+@cmdline.command()
 @click.option('--net',                      help='Network pickle filename', metavar='PATH|URL',                     type=str, required=True)
 @click.option('--data',                     help='Path to the dataset', metavar='ZIP|DIR',                          type=str, required=True)
 @click.option('--preset',                   help='Configuration preset', metavar='STR',                             type=str, required=True)
@@ -85,7 +128,7 @@ def parse_int_list(s):
 @click.option('--batch', 'max_batch_size',  help='Maximum batch size', metavar='INT',                               type=click.IntRange(min=1), default=32, show_default=True)
 @click.option('--class', 'class_idx',       help='Class label  [default: random]', metavar='INT',                   type=click.IntRange(min=0), default=None)
 
-def cmdline(**opts):
+def pixel(**opts):
     """Inverse problem solving using PnP-NCVSD.
 
     Examples:
@@ -115,17 +158,12 @@ def cmdline(**opts):
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size)
     
     # Load main network.
-    if isinstance(net, str):
-        if verbose:
-            dist.print0(f'Loading network from {net} ...')
-        with dnnlib.util.open_url(net, verbose=(verbose and dist.get_rank() == 0)) as f:
-            data = pickle.load(f)
-        net = data['ema'].to(device)
-        if encoder is None:
-            encoder = data.get('encoder', None)
-            if encoder is None:
-                encoder = dnnlib.util.construct_class_by_name(class_name='training.encoders.StandardRGBEncoder')
-    assert net is not None
+    if verbose:
+        dist.print0(f'Loading network from {net} ...')
+    with dnnlib.util.open_url(net, verbose=(verbose and dist.get_rank() == 0)) as f:
+        data = pickle.load(f)
+    net = data['ema'].to(device)
+    encoder = dnnlib.util.construct_class_by_name(class_name='training.encoders.StandardRGBEncoder')
     
     # Prepare operator.
     dist.print0(f'Operator: {preset.operator}')
@@ -148,10 +186,87 @@ def cmdline(**opts):
         likelihood_step_fn = lambda x0, sigma: operator.proximal_generator(x0, y, sigma_y, sigma)
         noise = torch.randn_like(images)
         x0hat = pnp_ncvsd_sampler(net, noise, sigmas, likelihood_step_fn, verbose=True, **preset.sampler)
-        for j, x0hat in enumerate(x0hat):
-            x0hat = encoder.decode(x0hat)
-            img = transforms.ToPILImage()(x0hat)
-            img.save(f'{opts.outdir}/{i * batch_size + j}.png')
+        x0hat = encoder.decode(x0hat)
+        for j, out in enumerate(x0hat):
+            out = transforms.ToPILImage()(out)
+            out.save(f'{opts.outdir}/{i * batch_size + j}.png')
+            
+#----------------------------------------------------------------------------
+# 'latent' subcommand.
+
+@cmdline.command()
+@click.option('--net',                      help='Network pickle filename', metavar='PATH|URL',                     type=str, required=True)
+@click.option('--data',                     help='Path to the dataset', metavar='ZIP|DIR',                          type=str, required=True)
+@click.option('--preset',                   help='Configuration preset', metavar='STR',                             type=str, required=True)
+@click.option('--outdir',                   help='Where to save the output images', metavar='DIR',                  type=str, required=True)
+@click.option('--seeds',                    help='List of random seeds (e.g. 1,2,5-10)', metavar='LIST',            type=parse_int_list, default='16-19', show_default=True)
+@click.option('--batch', 'max_batch_size',  help='Maximum batch size', metavar='INT',                               type=click.IntRange(min=1), default=32, show_default=True)
+@click.option('--class', 'class_idx',       help='Class label  [default: random]', metavar='INT',                   type=click.IntRange(min=0), default=None)
+
+def latent(**opts):
+    """Inverse problem solving using PnP-NCVSD.
+
+    Examples:
+
+    \b
+    # Generate a couple of images and save them as out/*.png
+    python generate_images.py --preset=edm2-img512-s-guid-dino --outdir=out
+
+    """
+    opts = dnnlib.EasyDict(opts)
+    
+    #----------------------------------------------------------------------------
+    # Main.
+    
+    net = opts.net
+    with open(opts.preset) as f:
+        preset = yaml.safe_load(f)
+    preset = dnnlib.EasyDict(preset)
+    encoder = None
+    device = torch.device('cuda')
+    verbose = True
+    batch_size = opts.max_batch_size
+    
+    # Prepare data.
+    dist.print0('Loading dataset...')
+    dataset = ImageFolderDataset(opts.data)
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size)
+    
+    # Load main network.
+    if verbose:
+        dist.print0(f'Loading network from {net} ...')
+    with dnnlib.util.open_url(net, verbose=(verbose and dist.get_rank() == 0)) as f:
+        data = pickle.load(f)
+    net = data['ema'].to(device)
+    encoder = dnnlib.util.construct_class_by_name(class_name='training.encoders.StabilityVAEEncoder')
+    rgb_encoder = dnnlib.util.construct_class_by_name(class_name='training.encoders.StandardRGBEncoder')
+    
+    # Prepare operator.
+    dist.print0(f'Operator: {preset.operator}')
+    operator = get_operator(**preset.operator, device=device)
+    sigma_y = torch.tensor([preset.noise['sigma']], device=device).view(-1, 1, 1, 1)
+    
+    # Prepare annealing schedule.
+    sigmas = karras_sigma_sampler(**preset.annealing, device=device)
+    
+    # Prepare output directory.
+    dist.print0(f'Create output directory {opts.outdir} ...')
+    os.makedirs(opts.outdir, exist_ok=True)
+    
+    # Inference.
+    for i, batch in enumerate(tqdm.tqdm(dataloader)):
+        images, labels = batch
+        images = rgb_encoder.encode_latents(images.to(device))
+        y = operator.forward(images)
+        y = y + torch.randn_like(y) * sigma_y
+        latent_operator = lambda x0: operator.forward(Resize(images.shape[-2:])(encoder.decode(x0, uint8=False) * 2 - 1))
+        likelihood_step_fn = lambda x0, sigma: lgvd_proximal_generator(x0, y, sigma_y, latent_operator, sigma, **preset.latent_lgvd)
+        noise = torch.randn(batch_size, net.img_channels, net.img_resolution, net.img_resolution, device=device)
+        x0hat = pnp_ncvsd_sampler(net, noise, sigmas, likelihood_step_fn, verbose=True, **preset.sampler)
+        x0hat = encoder.decode(x0hat)
+        for j, out in enumerate(x0hat):
+            out = transforms.ToPILImage()(out)
+            out.save(f'{opts.outdir}/{i * batch_size + j}.png')
 
 #----------------------------------------------------------------------------
 

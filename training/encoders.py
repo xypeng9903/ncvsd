@@ -122,13 +122,15 @@ class StabilityVAEEncoder(Encoder):
         x = x + misc.const_like(x, self.bias).reshape(1, -1, 1, 1)
         return x
 
-    def decode(self, x): # final latents => raw pixels
+    def decode(self, x, uint8=True): # final latents => raw pixels
         self.init(x.device)
         x = x.to(torch.float32)
         x = x - misc.const_like(x, self.bias).reshape(1, -1, 1, 1)
         x = x / misc.const_like(x, self.scale).reshape(1, -1, 1, 1)
         x = torch.cat([self._run_vae_decoder(batch) for batch in x.split(self.batch_size)])
-        x = x.clamp(0, 1).mul(255).to(torch.uint8)
+        x = x.clamp(0, 1)
+        if uint8:
+            x = x.mul(255).to(torch.uint8)
         return x
 
 #----------------------------------------------------------------------------
