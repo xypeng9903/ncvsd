@@ -1,0 +1,27 @@
+{
+    "network_kwargs": {
+        "model_channels": 192,
+        "dropout": 0.0,
+        "img_resolution": 64,
+        "img_channels": 4,
+        "label_dim": 0
+    },
+    "gamma": 0.414,
+    "g_lr_scaling": 0.01,
+    "d_lr_scaling": 0.01,
+    "gan_loss_scaling": 1,
+    "gan_warmup_batches": 2000,
+    "vsd_loss_kwargs": {
+        "P_mean": -0.4, 
+        "P_std": 1.0
+    },
+    "dsm_loss_kwargs": {
+        "P_mean": -0.4, 
+        "P_std": 1.0
+    },
+    "lr_kwargs": {
+        "ref_lr": 0.010,
+        "ref_batches": 7000,
+        "rampup_Mimg": 0
+    }
+}
