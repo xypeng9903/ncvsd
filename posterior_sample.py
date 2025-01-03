@@ -204,7 +204,7 @@ def pixel(**opts):
 @click.option('--class', 'class_idx',       help='Class label  [default: random]', metavar='INT',                   type=click.IntRange(min=0), default=None)
 
 def latent(**opts):
-    """Inverse problem solving using PnP-NCVSD.
+    """Inverse problem solving using PnP-NCVSD in latent space.
 
     Examples:
 

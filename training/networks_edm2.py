@@ -354,7 +354,7 @@ class Precond(torch.nn.Module):
         return D_x
     
 #----------------------------------------------------------------------------
-# UNet encoder
+# UNet encoder.
 
 @persistence.persistent_class
 class UNetEncoder(torch.nn.Module):
@@ -420,7 +420,7 @@ class UNetEncoder(torch.nn.Module):
         return x, skips
     
 #----------------------------------------------------------------------------
-# UNet decoder
+# UNet decoder.
 
 @persistence.persistent_class
 class UNetDecoder(torch.nn.Module):
@@ -522,7 +522,7 @@ class UNetDecoder(torch.nn.Module):
         return x
     
 #----------------------------------------------------------------------------
-# Condition UNet
+# Conditioal UNet.
 
 @persistence.persistent_class
 class PrecondCondition(torch.nn.Module):
