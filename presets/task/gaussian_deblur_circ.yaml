@@ -18,7 +18,7 @@ latent:
 
   sampler:
     ts: [10,22,39]
-    ema_sigma: 0.1
+    ema_sigma: 0.05
     ema_decay: 0.9
 
   lgvd:
