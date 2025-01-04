@@ -69,10 +69,9 @@ def lgvd_proximal_generator(
     operator, 
     sigma,  
     steps     = 100, 
-    base_lr   = 0.1
+    alpha     = 0.1
 ):
-    base_lr = base_lr * sigma_y ** 2
-    lr = (base_lr / (1 + base_lr / sigma ** 2)).mean().cpu().numpy()
+    lr = (1 / (alpha + 1 / sigma ** 2)).mean().cpu().numpy()
     x = x0.clone().detach().requires_grad_(True)
     optimizer = torch.optim.SGD([x], lr)
     for _ in range(steps):
