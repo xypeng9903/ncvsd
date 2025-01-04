@@ -51,8 +51,7 @@ def pnp_ncvsd_sampler(
             x0 = x0 * ema_decay + net(u, sigma, ts=ts) * (1 - ema_decay)
         else:
             x0 = net(u, sigma, ts=ts)
-        sigma_next = torch.ones(noise.shape[0], 1, 1, 1, device=noise.device) * sigmas[step + 1]
-        u = likelihood_step_fn(x0, sigma_next)
+        u = likelihood_step_fn(x0, sigmas[step + 1], pbar=pbar)
         if daps:
             u = u + torch.randn_like(u) * sigmas[step + 1]       
     return x0
@@ -64,22 +63,23 @@ def pnp_ncvsd_sampler(
 @torch.enable_grad()
 def lgvd_proximal_generator(
     x0, 
+    sigma,  
     y, 
     operator, 
-    sigma,  
-    tau, 
-    steps     = 100, 
-    alpha     = 0.1
+    beta, 
+    alpha     = 0.1,
+    steps     = 100,
+    pbar      = None,
 ):
-    lr = (1 / (alpha / tau ** 2 + 1 / sigma ** 2)).mean().cpu().numpy()
+    lr = (1 / (alpha / beta + 1 / sigma ** 2)).cpu().numpy()
     x = x0.clone().detach().requires_grad_(True)
     optimizer = torch.optim.SGD([x], lr)
     for _ in range(steps):
         optimizer.zero_grad()
-        loss = (
-            ((operator(x) - y) ** 2 / (2 * tau **2)).sum() + 
-            ((x - x0.detach()) ** 2 / (2 * sigma ** 2)).sum() 
-        )
+        energy = ((operator(x) - y) ** 2).sum()
+        if pbar is not None:
+            pbar.set_description(f"energy: {energy.item() / x.shape[0]:.4f}")
+        loss = energy / beta + ((x - x0.detach()) ** 2).sum() / (2 * sigma ** 2)
         loss.backward()
         optimizer.step()
         with torch.no_grad():
@@ -87,7 +87,6 @@ def lgvd_proximal_generator(
             x.data = x.data + np.sqrt(2 * lr) * epsilon
         if torch.isnan(x).any():
             return torch.zeros_like(x)
-        print(f"{loss.item():.4f}", end='\r')
     return x.detach()
 
 #----------------------------------------------------------------------------
@@ -246,7 +245,7 @@ def latent(**opts):
     # Prepare operator.
     dist.print0(f'Operator: {preset.operator}')
     operator = get_operator(**preset.operator, device=device)
-    sigma_y = torch.tensor([preset.noise['sigma']], device=device).view(-1, 1, 1, 1)
+    sigma_y = preset.noise['sigma']
     
     # Prepare annealing schedule.
     sigmas = karras_sigma_sampler(**c.annealing, device=device)
@@ -261,8 +260,8 @@ def latent(**opts):
         images = rgb_encoder.encode_latents(images.to(device))
         y = operator.forward(images)
         y = y + torch.randn_like(y) * sigma_y
-        latent_operator = lambda x0: operator.forward(Resize(images.shape[-2:])(encoder.decode(x0, uint8=False) * 2 - 1))
-        likelihood_step_fn = lambda x0, sigma: lgvd_proximal_generator(x0, y, latent_operator, sigma, **c.lgvd)
+        latent_operator = lambda x0: operator.forward(Resize(images.shape[-2:])(encoder.decode(x0, uint8=False)) * 2 - 1)
+        likelihood_step_fn = lambda x0, sigma, **kwargs: lgvd_proximal_generator(x0, sigma, y, latent_operator, **c.lgvd, **kwargs)
         noise = torch.randn(batch_size, net.img_channels, net.img_resolution, net.img_resolution, device=device)
         x0hat = pnp_ncvsd_sampler(net, noise, sigmas, likelihood_step_fn, verbose=True, **c.sampler)
         x0hat = Resize(images.shape[-2:])(encoder.decode(x0hat))
