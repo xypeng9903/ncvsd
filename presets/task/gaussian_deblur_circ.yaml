@@ -17,11 +17,11 @@ latent:
     rho: 7.0
 
   sampler:
-    ts: null
+    ts: [10,22,39]
     ema_sigma: 0
     ema_decay: 0.95
 
   lgvd:
-    beta: 0.0001
+    beta: 0.001
     alpha: 100
     steps: 50
