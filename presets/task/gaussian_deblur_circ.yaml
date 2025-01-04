@@ -9,18 +9,19 @@ noise:
   name: gaussian
   sigma: 0.05
 
-annealing:
-  steps: 20 
-  sigma_min: 0.1
-  sigma_max: 10.0
-  rho: 7.0
+latent:
+  annealing:
+    steps: 50 
+    sigma_min: 0.1
+    sigma_max: 10.0
+    rho: 7.0
 
-sampler:
-  ts: [10,22,39]
-  ema_sigma: 0
-  ema_decay: 0.95
+  sampler:
+    ts: [10,22,39]
+    ema_sigma: 0
+    ema_decay: 0.95
 
-latent_lgvd:
-  steps: 100
-  alpha: 100
-  tau: 0.01
+  lgvd:
+    steps: 100
+    alpha: 100
+    tau: 0.01

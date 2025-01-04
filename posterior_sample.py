@@ -142,14 +142,16 @@ def pixel(**opts):
     #----------------------------------------------------------------------------
     # Main.
     
-    net = opts.net
-    with open(opts.preset) as f:
+    net        = opts.net
+    preset     = opts.preset
+    batch_size = opts.max_batch_size
+    device     = torch.device('cuda')
+    verbose    = True
+    
+    with open(preset) as f:
         preset = yaml.safe_load(f)
     preset = dnnlib.EasyDict(preset)
-    encoder = None
-    device = torch.device('cuda')
-    verbose = True
-    batch_size = opts.max_batch_size
+    c = dnnlib.EasyDict(preset.pixel)
     
     # Prepare data.
     dist.print0('Loading dataset...')
@@ -170,7 +172,7 @@ def pixel(**opts):
     sigma_y = preset.noise['sigma']
     
     # Prepare annealing schedule.
-    sigmas = karras_sigma_sampler(**preset.annealing, device=device)
+    sigmas = karras_sigma_sampler(**c.annealing, device=device)
     
     # Prepare output directory.
     dist.print0(f'Create output directory {opts.outdir} ...')
@@ -184,7 +186,7 @@ def pixel(**opts):
         y = y + torch.randn_like(y) * sigma_y
         likelihood_step_fn = lambda x0, sigma: operator.proximal_generator(x0, y, sigma_y, sigma)
         noise = torch.randn_like(images)
-        x0hat = pnp_ncvsd_sampler(net, noise, sigmas, likelihood_step_fn, verbose=True, **preset.sampler)
+        x0hat = pnp_ncvsd_sampler(net, noise, sigmas, likelihood_step_fn, verbose=True, **c.sampler)
         x0hat = encoder.decode(x0hat)
         for j, out in enumerate(x0hat):
             out = transforms.ToPILImage()(out)
@@ -217,14 +219,16 @@ def latent(**opts):
     #----------------------------------------------------------------------------
     # Main.
     
-    net = opts.net
-    with open(opts.preset) as f:
+    net        = opts.net
+    preset     = opts.preset
+    batch_size = opts.max_batch_size
+    device     = torch.device('cuda')
+    verbose    = True
+    
+    with open(preset) as f:
         preset = yaml.safe_load(f)
     preset = dnnlib.EasyDict(preset)
-    encoder = None
-    device = torch.device('cuda')
-    verbose = True
-    batch_size = opts.max_batch_size
+    c = dnnlib.EasyDict(preset.latent)
     
     # Prepare data.
     dist.print0('Loading dataset...')
@@ -246,7 +250,7 @@ def latent(**opts):
     sigma_y = torch.tensor([preset.noise['sigma']], device=device).view(-1, 1, 1, 1)
     
     # Prepare annealing schedule.
-    sigmas = karras_sigma_sampler(**preset.annealing, device=device)
+    sigmas = karras_sigma_sampler(**c.annealing, device=device)
     
     # Prepare output directory.
     dist.print0(f'Create output directory {opts.outdir} ...')
@@ -259,9 +263,9 @@ def latent(**opts):
         y = operator.forward(images)
         y = y + torch.randn_like(y) * sigma_y
         latent_operator = lambda x0: operator.forward(Resize(images.shape[-2:])(encoder.decode(x0, uint8=False) * 2 - 1))
-        likelihood_step_fn = lambda x0, sigma: lgvd_proximal_generator(x0, y, latent_operator, sigma, **preset.latent_lgvd)
+        likelihood_step_fn = lambda x0, sigma: lgvd_proximal_generator(x0, y, latent_operator, sigma, **c.lgvd)
         noise = torch.randn(batch_size, net.img_channels, net.img_resolution, net.img_resolution, device=device)
-        x0hat = pnp_ncvsd_sampler(net, noise, sigmas, likelihood_step_fn, verbose=True, **preset.sampler)
+        x0hat = pnp_ncvsd_sampler(net, noise, sigmas, likelihood_step_fn, verbose=True, **c.sampler)
         x0hat = Resize(images.shape[-2:])(encoder.decode(x0hat))
         for j, out in enumerate(x0hat):
             out = transforms.ToPILImage()(out)
