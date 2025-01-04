@@ -22,6 +22,6 @@ latent:
     ema_decay: 0.95
 
   lgvd:
-    steps: 100
-    alpha: 100
+    steps: 50
+    alpha: 50
     tau: 0.01
