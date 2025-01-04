@@ -262,7 +262,7 @@ def latent(**opts):
         likelihood_step_fn = lambda x0, sigma: lgvd_proximal_generator(x0, y, latent_operator, sigma, **preset.latent_lgvd)
         noise = torch.randn(batch_size, net.img_channels, net.img_resolution, net.img_resolution, device=device)
         x0hat = pnp_ncvsd_sampler(net, noise, sigmas, likelihood_step_fn, verbose=True, **preset.sampler)
-        x0hat = encoder.decode(x0hat)
+        x0hat = Resize(images.shape[-2:])(encoder.decode(x0hat))
         for j, out in enumerate(x0hat):
             out = transforms.ToPILImage()(out)
             out.save(f'{opts.outdir}/{i * batch_size + j}.png')
