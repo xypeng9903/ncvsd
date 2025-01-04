@@ -48,36 +48,37 @@ def pnp_ncvsd_sampler(
     for step in pbar:
         sigma = torch.ones(noise.shape[0], 1, 1, 1, device=noise.device) * sigmas[step]
         if sigmas[step] < ema_sigma and x0 is not None:
-            x0 = x0 * ema_decay + net(u, sigma, ts=ts) * (1 - ema_decay) # Prior step.
+            x0 = x0 * ema_decay + net(u, sigma, ts=ts) * (1 - ema_decay)
         else:
-            x0 = net(u, sigma, ts=ts) # Prior step.
+            x0 = net(u, sigma, ts=ts)
         sigma_next = torch.ones(noise.shape[0], 1, 1, 1, device=noise.device) * sigmas[step + 1]
-        u = likelihood_step_fn(x0, sigma_next) # Likelihood step.
-        if daps: # Forward diffusion.
+        u = likelihood_step_fn(x0, sigma_next)
+        if daps:
             u = u + torch.randn_like(u) * sigmas[step + 1]       
     return x0
 
 #----------------------------------------------------------------------------
-# Proximal generator using langevin dynamics for latent space inference.
+# Unadjusted Langevin Algorithm for likelihood step.
 # (modified from https://github.com/zhangbingliang2019/DAPS/blob/25471a8d7c3416995b88243355dd677648ead6ef/sampler.py#L216)
 
 @torch.enable_grad()
 def lgvd_proximal_generator(
     x0, 
     y, 
-    sigma_y, 
     operator, 
     sigma,  
+    tau, 
     steps     = 100, 
     alpha     = 0.1
 ):
+    alpha = alpha / (tau ** 2)
     lr = (1 / (alpha + 1 / sigma ** 2)).mean().cpu().numpy()
     x = x0.clone().detach().requires_grad_(True)
     optimizer = torch.optim.SGD([x], lr)
     for _ in range(steps):
         optimizer.zero_grad()
         loss = (
-            ((operator(x) - y) ** 2 / (2 * sigma_y **2)).sum() + 
+            ((operator(x) - y) ** 2 / (2 * tau **2)).sum() + 
             ((x - x0.detach()) ** 2 / (2 * sigma ** 2)).sum() 
         )
         loss.backward()
@@ -258,7 +259,7 @@ def latent(**opts):
         y = operator.forward(images)
         y = y + torch.randn_like(y) * sigma_y
         latent_operator = lambda x0: operator.forward(Resize(images.shape[-2:])(encoder.decode(x0, uint8=False) * 2 - 1))
-        likelihood_step_fn = lambda x0, sigma: lgvd_proximal_generator(x0, y, sigma_y, latent_operator, sigma, **preset.latent_lgvd)
+        likelihood_step_fn = lambda x0, sigma: lgvd_proximal_generator(x0, y, latent_operator, sigma, **preset.latent_lgvd)
         noise = torch.randn(batch_size, net.img_channels, net.img_resolution, net.img_resolution, device=device)
         x0hat = pnp_ncvsd_sampler(net, noise, sigmas, likelihood_step_fn, verbose=True, **preset.sampler)
         x0hat = encoder.decode(x0hat)

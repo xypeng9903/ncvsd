@@ -10,9 +10,9 @@ noise:
   sigma: 0.05
 
 annealing:
-  steps: 40 
-  sigma_min: 0.002
-  sigma_max: 80.0
+  steps: 20 
+  sigma_min: 0.1
+  sigma_max: 10.0
   rho: 7.0
 
 sampler:
@@ -22,4 +22,5 @@ sampler:
 
 latent_lgvd:
   steps: 100
-  alpha: 10000
+  alpha: 100
+  tau: 0.01

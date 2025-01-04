@@ -8,4 +8,4 @@ python posterior_sample.py latent \
     --data="../data/test/ffhq_val" \
     --preset="presets/task/$TASK.yaml" \
     --outdir="out/$TASK" \
-    --batch=2
+    --batch=1
