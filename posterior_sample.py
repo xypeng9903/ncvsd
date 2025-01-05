@@ -52,17 +52,18 @@ def pnp_ncvsd_sampler(
 ):
     pbar = tqdm.trange(len(sigmas) - 1) if verbose else range(len(sigmas) - 1)
     sigma = torch.ones(noise.shape[0], 1, 1, 1, device=noise.device) * sigmas[0]
-    u = noise * sigma
     x0 = None
-    for step in pbar:
-        sigma = torch.ones(noise.shape[0], 1, 1, 1, device=noise.device) * sigmas[step]
-        if sigmas[step] < ema_sigma and x0 is not None:
-            x0 = x0 * ema_decay + net(u, sigma, ts=ts) * (1 - ema_decay)
+    u = noise * sigma
+    for i in pbar:
+        sigma = sigmas[i] * torch.ones(noise.shape[0], 1, 1, 1, device=noise.device)
+        x = net(u, sigma, ts=ts)
+        if sigmas[i] < ema_sigma and x0 is not None:
+            x0 = x0 * ema_decay + x * (1 - ema_decay)
         else:
-            x0 = net(u, sigma, ts=ts)
-        u = likelihood_step_fn(x0, sigmas[step + 1], pbar=pbar)
+            x0 = x
+        u = likelihood_step_fn(x, sigmas[i + 1], pbar=pbar)
         if daps:
-            u = u + torch.randn_like(u) * sigmas[step + 1]       
+            u = u + torch.randn_like(u) * sigmas[i + 1]       
     return x0
 
 #----------------------------------------------------------------------------
