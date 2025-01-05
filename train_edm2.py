@@ -6,8 +6,8 @@
 # You should have received a copy of the license along with this
 # work. If not, see http://creativecommons.org/licenses/by-nc-sa/4.0/
 
-"""Train diffusion models according to the EDM2 recipe from the paper
-"Analyzing and Improving the Training Dynamics of Diffusion Models"."""
+"""Distill a generative denoiser from a pretrained EDM2 model according to the paper
+"Noise Conditional Variational Score Distillation"."""
 
 import os
 import re
