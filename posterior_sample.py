@@ -1,3 +1,13 @@
+# This work is developed based on the EDM2 codebase (https://github.com/NVlabs/edm2).
+# We thank the authors for their great open-source project.
+#
+# This work is licensed under a Creative Commons
+# Attribution-NonCommercial-ShareAlike 4.0 International License.
+# You should have received a copy of the license along with this
+# work. If not, see http://creativecommons.org/licenses/by-nc-sa/4.0/
+
+"""Zero-shot probablistic inference using PnP-NCVSD."""
+
 import torch
 import tqdm
 import click
@@ -14,7 +24,6 @@ from torchvision.transforms import Resize
 
 from training.networks_edm2 import GenerativeDenoiser
 from tasks import get_operator
-
 
 #----------------------------------------------------------------------------
 # Karras inference sigma.

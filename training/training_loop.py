@@ -1,4 +1,5 @@
-# Copyright (c) 2024, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# This work is developed based on the EDM2 codebase (https://github.com/NVlabs/edm2).
+# We thank the authors for their great open-source project.
 #
 # This work is licensed under a Creative Commons
 # Attribution-NonCommercial-ShareAlike 4.0 International License.
