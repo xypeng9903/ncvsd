@@ -8,4 +8,5 @@ torchrun --standalone --nproc_per_node=$NUM_GPUS train_edm2.py \
     --batch-gpu=$BATCH_GPU \
     --cond=False \
     --checkpoint 1Mi \
-    --snapshot 1Mi
+    --snapshot 1Mi \
+    --ls=0.1
