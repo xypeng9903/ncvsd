@@ -12,16 +12,16 @@ noise:
 latent:
   annealing:
     steps: 50 
-    sigma_min: 0.002
-    sigma_max: 80.0
+    sigma_min: 0.1
+    sigma_max: 20.0
     rho: 7.0
 
   sampler:
-    ts: [10,22,39]
-    ema_sigma: 0.05
+    ts: null
+    ema_sigma: 0.0
     ema_decay: 0.9
 
   lgvd:
-    beta: 0.001
+    beta: 0.0001
     alpha: 100
-    steps: 50
+    steps: 200
