@@ -7,5 +7,5 @@ torchrun --standalone --nproc_per_node=$NUM_GPUS train_edm2.py \
     --data="../data/edm2/ffhq256.zip" \
     --batch-gpu=$BATCH_GPU \
     --cond=False \
-    --checkpoint 128Ki \
-    --snapshot 128Ki
+    --checkpoint 1Mi \
+    --snapshot 1Mi

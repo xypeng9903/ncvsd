@@ -45,7 +45,7 @@ class EDM2Loss:
 # Learning rate decay schedule used in the paper "Analyzing and Improving
 # the Training Dynamics of Diffusion Models".
 
-def learning_rate_schedule(cur_nimg, batch_size, ref_lr=100e-4, ref_batches=70e3, rampup_Mimg=0):
+def learning_rate_schedule(cur_nimg, batch_size, ref_lr=100e-4, ref_batches=70e3, rampup_Mimg=1):
     lr = ref_lr
     if ref_batches > 0:
         lr /= np.sqrt(max(cur_nimg / (ref_batches * batch_size), 1))
