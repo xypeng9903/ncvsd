@@ -144,6 +144,7 @@ def training_loop(
     # Setup tensorboard.
     if dist.get_rank() == 0:
         writer = SummaryWriter(log_dir=run_dir)
+        
     # Main training loop.
     dataset_sampler = misc.InfiniteSampler(dataset=dataset_obj, rank=dist.get_rank(), num_replicas=dist.get_world_size(), seed=seed, start_idx=state.cur_nimg)
     dataset_iterator = iter(dnnlib.util.construct_class_by_name(dataset=dataset_obj, sampler=dataset_sampler, batch_size=batch_gpu, **data_loader_kwargs))
