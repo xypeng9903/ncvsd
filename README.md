@@ -4,18 +4,16 @@
 
 
 ## Training
+Start training by running
+```bash
+bash quick_start/train-ffhq256-xs.sh {NUM_GPUS} {BATCH_PER_GPU}
+```
+Note that the effective batch size 128 should be divided by `{NUM_GPUS}` x `{BATCH_PER_GPU}`.
 
 ## Evaluation
 ```bash
-# ImageNet 64x64
-torchrun --standalone --nproc_per_node=8 calculate_metrics.py gen \
+torchrun --standalone --nproc_per_node={NUM_GPUS} calculate_metrics.py gen \
     --net='<your-snapshot.pkl>' \
-    --ref=https://nvlabs-fi-cdn.nvidia.com/edm2/dataset-refs/img64.pkl \
-    --seed=123456789
-
-# ImageNet 512x512
-torchrun --standalone --nproc_per_node=8 calculate_metrics.py gen \
-    --net='<your-snapshot.pkl>' \
-    --ref=https://nvlabs-fi-cdn.nvidia.com/edm2/dataset-refs/img512.pkl \
+    --ref='path/to/ffhq256.zip' \
     --seed=123456789
 ```
