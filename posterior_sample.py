@@ -67,7 +67,7 @@ def pnp_ncvsd_sampler(
     return x0
 
 #----------------------------------------------------------------------------
-# Unadjusted Langevin Algorithm for likelihood step.
+# Unadjusted Langevin Algorithm for the likelihood step.
 # (modified from https://github.com/zhangbingliang2019/DAPS/blob/25471a8d7c3416995b88243355dd677648ead6ef/sampler.py#L216)
 
 @torch.enable_grad()
@@ -77,9 +77,9 @@ def lgvd_proximal_generator(
     y, 
     operator, 
     beta, 
-    c2        = 0.1,
-    c1        = 0.1,
+    c2,
     steps     = 100,
+    c1        = 0.1,
     pbar      = None,
 ):
     lr = (c1 / (c2 / beta + 1 / sigma ** 2)).cpu().numpy()
