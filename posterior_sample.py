@@ -61,7 +61,7 @@ def pnp_ncvsd_sampler(
             x0 = x0 * ema_decay + x * (1 - ema_decay)
         else:
             x0 = x
-        u = likelihood_step_fn(x, sigmas[i + 1])
+        u = likelihood_step_fn(x, sigmas[i + 1], pbar)
         if daps:
             u = u + torch.randn_like(u) * sigmas[i + 1]       
     return x0
@@ -189,7 +189,10 @@ def pixel(**opts):
         images = encoder.encode_latents(images.to(device))
         y = operator.forward(images)
         y = y + torch.randn_like(y) * sigma_y
-        likelihood_step_fn = lambda x0, sigma: operator.proximal_generator(x0, y, sigma_y, sigma)
+        if hasattr(operator, 'proximal_generator'):
+            likelihood_step_fn = lambda x0, sigma, pbar: operator.proximal_generator(x0, y, sigma_y, sigma)
+        else:
+            likelihood_step_fn = lambda x0, sigma, pbar: lgvd_proximal_generator(x0, sigma, y, operator.forward, pbar=pbar, **c.lgvd)
         noise = torch.randn_like(images)
         x0hat = pnp_ncvsd_sampler(net, noise, sigmas, likelihood_step_fn, verbose=True, **c.sampler)
         x0hat = encoder.decode(x0hat)

@@ -22,15 +22,15 @@ class PhaseRetrieval(NonLinearOperator):
         amplitude = fft2_m(padded).abs()
         return amplitude
 
-    @torch.enable_grad()
-    def proximal_generator(self, x, y, sigma, rho, gamma=5e-3, num_iters=100):
-        z = x
-        z.requires_grad_()
-        for _ in range(num_iters):
-            data_fit = (self.forward(z) - y).norm()**2 / (2*sigma**2)
-            grad = torch.autograd.grad(outputs=data_fit, inputs=z)[0]
-            z = z - gamma * grad - (gamma/rho**2) * (z - x) + np.sqrt(2*gamma) * torch.randn_like(x)
-        return z.type(torch.float32)
+    # @torch.enable_grad()
+    # def proximal_generator(self, x, y, sigma, rho, gamma=5e-3, num_iters=100):
+    #     z = x
+    #     z.requires_grad_()
+    #     for _ in range(num_iters):
+    #         data_fit = (self.forward(z) - y).norm()**2 / (2*sigma**2)
+    #         grad = torch.autograd.grad(outputs=data_fit, inputs=z)[0]
+    #         z = z - gamma * grad - (gamma/rho**2) * (z - x) + np.sqrt(2*gamma) * torch.randn_like(x)
+    #     return z.type(torch.float32)
 
     def proximal_for_admm(self, x, y, rho, gamma=1e-4, num_iters=100):
         z = x
