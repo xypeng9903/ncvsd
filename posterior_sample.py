@@ -61,7 +61,7 @@ def pnp_ncvsd_sampler(
             x0 = x0 * ema_decay + x * (1 - ema_decay)
         else:
             x0 = x
-        u = likelihood_step_fn(x, sigmas[i + 1], pbar=pbar)
+        u = likelihood_step_fn(x, sigmas[i + 1])
         if daps:
             u = u + torch.randn_like(u) * sigmas[i + 1]       
     return x0
@@ -139,11 +139,7 @@ def cmdline():
 def pixel(**opts):
     """Inverse problem solving using PnP-NCVSD.
 
-    Examples:
-
-    \b
-    # Generate a couple of images and save them as out/*.png
-    python generate_images.py --preset=edm2-img512-s-guid-dino --outdir=out
+    TODO: Examples:
 
     """
     opts = dnnlib.EasyDict(opts)
@@ -216,11 +212,7 @@ def pixel(**opts):
 def latent(**opts):
     """Inverse problem solving using PnP-NCVSD in latent space.
 
-    Examples:
-
-    \b
-    # Generate a couple of images and save them as out/*.png
-    python generate_images.py --preset=edm2-img512-s-guid-dino --outdir=out
+    TODO: Examples:
 
     """
     opts = dnnlib.EasyDict(opts)

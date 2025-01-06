@@ -9,6 +9,18 @@ noise:
   name: gaussian
   sigma: 0.05
 
+pixel:
+  annealing:
+    steps: 50
+    sigma_min: 0.002
+    sigma_max: 80.0
+    rho: 7.0
+
+  sampler:
+    ts: null
+    ema_sigma: 0.5
+    ema_decay: 0.95
+
 latent:
   annealing:
     steps: 50 
