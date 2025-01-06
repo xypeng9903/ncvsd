@@ -20,11 +20,8 @@
         "P_std": 1.6
     },
     "lr_kwargs": {
-        "ref_lr": 0.0012,
+        "ref_lr": 0.0120,
         "ref_batches": 3500,
         "rampup_Mimg": 0
-    },
-    "optimizer_kwargs": {
-        "eps": 1e-06
     }
 }
