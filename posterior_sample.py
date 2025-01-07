@@ -21,9 +21,11 @@ from torchvision import transforms
 import os
 import numpy as np
 from torchvision.transforms import Resize
+from piq import psnr, ssim, LPIPS
 
 from training.networks_edm2 import GenerativeDenoiser
 from tasks import get_operator
+from tasks.eval import get_eval_fn, Evaluator
 
 #----------------------------------------------------------------------------
 # Karras inference sigma.
@@ -118,6 +120,15 @@ def parse_int_list(s):
     return ranges
 
 #----------------------------------------------------------------------------
+# Evaluation functions.
+
+__EVAL_FUNC__ = {
+    'psnr': psnr,
+    'ssim': ssim,
+    'lpips': LPIPS(replace_pooling=True, reduction='none'),
+}
+
+#----------------------------------------------------------------------------
 # Main command line.
 
 @click.group()
@@ -137,15 +148,7 @@ def cmdline():
 @click.option('--class', 'class_idx',       help='Class label  [default: random]', metavar='INT',                   type=click.IntRange(min=0), default=None)
 
 def pixel(**opts):
-    """Inverse problem solving using PnP-NCVSD.
-
-    TODO: Examples:
-
-    """
     opts = dnnlib.EasyDict(opts)
-    
-    #----------------------------------------------------------------------------
-    # Main.
     
     net        = opts.net
     preset     = opts.preset
@@ -179,27 +182,52 @@ def pixel(**opts):
     # Prepare annealing schedule.
     sigmas = karras_sigmas(**c.annealing, device=device)
     
+    # get evaluator
+    eval_fn_list = []
+    for eval_fn_name in ['psnr', 'ssim', 'lpips']:
+        eval_fn_list.append(get_eval_fn(eval_fn_name))
+    evaluator = Evaluator(eval_fn_list)
+    
     # Prepare output directory.
     dist.print0(f'Create output directory {opts.outdir} ...')
     os.makedirs(opts.outdir, exist_ok=True)
     
     # Inference.
+    full_images = []
+    full_samples = []
+    full_ys = []
     for i, batch in enumerate(tqdm.tqdm(dataloader)):
+        # Get measurements.
         images, labels = batch
         images = encoder.encode_latents(images.to(device))
         y = operator.forward(images)
         y = y + torch.randn_like(y) * sigma_y
+        
+        # PnP-NCVSD.
         if hasattr(operator, 'proximal_generator'):
             likelihood_step_fn = lambda x0, sigma, pbar: operator.proximal_generator(x0, y, sigma_y, sigma)
         else:
             likelihood_step_fn = lambda x0, sigma, pbar: ula_proximal_generator(x0, sigma, y, operator.forward, pbar=pbar, **c.lgvd)
         noise = torch.randn_like(images)
         x0hat = pnp_ncvsd_sampler(net, noise, sigmas, likelihood_step_fn, verbose=True, **c.sampler)
+        
+        # Save samples.
+        full_images.append(images.cpu())
+        full_ys.append(y.cpu())
+        full_samples.append(x0hat.cpu())
         x0hat = encoder.decode(x0hat)
         for j, out in enumerate(x0hat):
             out = transforms.ToPILImage()(out)
             out.save(f'{opts.outdir}/{i * batch_size + j}.png')
             
+    # Evaluation.
+    full_samples = torch.cat(full_samples, dim=0)
+    full_ys = torch.cat(full_ys, dim=0)
+    full_images = torch.cat(full_images, dim=0)
+    results = evaluator.report(full_images, full_ys, full_samples)
+    markdown_text = evaluator.display(results)
+    print(markdown_text)
+    
 #----------------------------------------------------------------------------
 # 'latent' subcommand.
 
