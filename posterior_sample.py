@@ -267,7 +267,7 @@ def latent(**opts):
         y = operator.forward(images)
         y = y + torch.randn_like(y) * sigma_y
         latent_operator = lambda x0: operator.forward(Resize(images.shape[-2:])(encoder.decode(x0, uint8=False)) * 2 - 1)
-        likelihood_step_fn = lambda x0, sigma, **kwargs: lgvd_proximal_generator(x0, sigma, y, latent_operator, **c.lgvd, **kwargs)
+        likelihood_step_fn = lambda x0, sigma, pbar: lgvd_proximal_generator(x0, sigma, y, latent_operator, pbar=pbar, **c.lgvd)
         noise = torch.randn(batch_size, net.img_channels, net.img_resolution, net.img_resolution, device=device)
         x0hat = pnp_ncvsd_sampler(net, noise, sigmas, likelihood_step_fn, verbose=True, **c.sampler)
         x0hat = Resize(images.shape[-2:])(encoder.decode(x0hat))
