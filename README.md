@@ -20,3 +20,16 @@ Note that the effective batch size 2048 should be divided by `{NUM_GPUS}` x `{BA
 The `{MODEL_NAME}` can be one of the following:
  - `img64-{s|m|l}`     
  - `img512-{s|m|l|xl}`
+
+## Inverse problem solving
+Solving inverse problems with PnP-NCVSD by running
+
+```bash
+bash quick_start/posterior-sample.sh {TASK_NAME}
+```
+
+The `{TASK_NAME}` can be one of the following:
+- `gaussian_deblur_circ`
+- `motion_deblur_circ`
+- `super_resolution_svd`
+- `phase_retrieval`
