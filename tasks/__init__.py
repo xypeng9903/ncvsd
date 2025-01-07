@@ -194,3 +194,4 @@ from .motion_blur import MotionBlurCircular
 from .super_resolution_svd import SuperResolution
 from .coded_diffraction_patterns import CodedDiffractionPatterns
 from .phase_retrieval import PhaseRetrieval
+from .inpainting import Inpainting
