@@ -71,7 +71,7 @@ def pnp_ncvsd_sampler(
 # (modified from https://github.com/zhangbingliang2019/DAPS/blob/25471a8d7c3416995b88243355dd677648ead6ef/sampler.py#L216)
 
 @torch.enable_grad()
-def lgvd_proximal_generator(
+def ula_proximal_generator(
     x0, 
     sigma,  
     y, 
@@ -192,7 +192,7 @@ def pixel(**opts):
         if hasattr(operator, 'proximal_generator'):
             likelihood_step_fn = lambda x0, sigma, pbar: operator.proximal_generator(x0, y, sigma_y, sigma)
         else:
-            likelihood_step_fn = lambda x0, sigma, pbar: lgvd_proximal_generator(x0, sigma, y, operator.forward, pbar=pbar, **c.lgvd)
+            likelihood_step_fn = lambda x0, sigma, pbar: ula_proximal_generator(x0, sigma, y, operator.forward, pbar=pbar, **c.lgvd)
         noise = torch.randn_like(images)
         x0hat = pnp_ncvsd_sampler(net, noise, sigmas, likelihood_step_fn, verbose=True, **c.sampler)
         x0hat = encoder.decode(x0hat)
@@ -267,7 +267,7 @@ def latent(**opts):
         y = operator.forward(images)
         y = y + torch.randn_like(y) * sigma_y
         latent_operator = lambda x0: operator.forward(Resize(images.shape[-2:])(encoder.decode(x0, uint8=False)) * 2 - 1)
-        likelihood_step_fn = lambda x0, sigma, pbar: lgvd_proximal_generator(x0, sigma, y, latent_operator, pbar=pbar, **c.lgvd)
+        likelihood_step_fn = lambda x0, sigma, pbar: ula_proximal_generator(x0, sigma, y, latent_operator, pbar=pbar, **c.lgvd)
         noise = torch.randn(batch_size, net.img_channels, net.img_resolution, net.img_resolution, device=device)
         x0hat = pnp_ncvsd_sampler(net, noise, sigmas, likelihood_step_fn, verbose=True, **c.sampler)
         x0hat = Resize(images.shape[-2:])(encoder.decode(x0hat))
