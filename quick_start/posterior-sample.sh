@@ -4,7 +4,7 @@ export HF_HOME="../model_zoo/huggingface"
 export HF_ENDPOINT="http://hf-mirror.com"
 
 python posterior_sample.py pixel \
-    --net="training-runs/ffhq256-xs/snapshot-0000655-0.100.pkl" \
+    --net="training-runs/ffhq256-xs/snapshot-0000786-0.050.pkl" \
     --data="../data/test/ffhq_val" \
     --preset="presets/task/$TASK.yaml" \
     --outdir="out/$TASK" \

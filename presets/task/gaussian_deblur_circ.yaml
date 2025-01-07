@@ -19,7 +19,7 @@ pixel:
   sampler:
     ts: null
     ema_sigma: 0.5
-    ema_decay: 0.95
+    ema_decay: 0.99
 
 latent:
   annealing:
