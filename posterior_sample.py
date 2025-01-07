@@ -21,7 +21,6 @@ from torchvision import transforms
 import os
 import numpy as np
 from torchvision.transforms import Resize
-from piq import psnr, ssim, LPIPS
 
 from training.networks_edm2 import GenerativeDenoiser
 from tasks import get_operator
