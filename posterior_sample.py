@@ -119,15 +119,6 @@ def parse_int_list(s):
     return ranges
 
 #----------------------------------------------------------------------------
-# Evaluation functions.
-
-__EVAL_FUNC__ = {
-    'psnr': psnr,
-    'ssim': ssim,
-    'lpips': LPIPS(replace_pooling=True, reduction='none'),
-}
-
-#----------------------------------------------------------------------------
 # Main command line.
 
 @click.group()
