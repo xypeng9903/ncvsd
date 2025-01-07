@@ -21,7 +21,7 @@
     },
     "lr_kwargs": {
         "ref_lr": 0.008,
-        "ref_batches": 7000,
+        "ref_batches": 3500,
         "rampup_Mimg": 0
     }
 }
