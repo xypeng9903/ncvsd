@@ -28,7 +28,7 @@ from tasks import get_operator
 #----------------------------------------------------------------------------
 # Karras inference sigma.
 
-def karras_sigma_sampler(steps, device, sigma_min=0.002, sigma_max=80.0, rho=7.0):
+def karras_sigmas(steps, device, sigma_min=0.002, sigma_max=80.0, rho=7.0):
     ramp = torch.linspace(0, 1, steps, device=device)
     min_inv_rho = sigma_min ** (1 / rho)
     max_inv_rho = sigma_max ** (1 / rho)
@@ -177,7 +177,7 @@ def pixel(**opts):
     sigma_y = preset.noise['sigma']
     
     # Prepare annealing schedule.
-    sigmas = karras_sigma_sampler(**c.annealing, device=device)
+    sigmas = karras_sigmas(**c.annealing, device=device)
     
     # Prepare output directory.
     dist.print0(f'Create output directory {opts.outdir} ...')
@@ -254,7 +254,7 @@ def latent(**opts):
     sigma_y = preset.noise['sigma']
     
     # Prepare annealing schedule.
-    sigmas = karras_sigma_sampler(**c.annealing, device=device)
+    sigmas = karras_sigmas(**c.annealing, device=device)
     
     # Prepare output directory.
     dist.print0(f'Create output directory {opts.outdir} ...')
