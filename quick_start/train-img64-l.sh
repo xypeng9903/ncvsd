@@ -7,7 +7,6 @@ torchrun --standalone --nproc_per_node=$NUM_GPUS train_edm2.py \
     --net="../model_zoo/edm2/edm2-img64-l-1073741-0.040.pkl" \
     --data="../data/edm2/img64.zip" \
     --batch-gpu=$BATCH_GPU \
-    --batch=2048 \
     --duration="32Mi" \
     --checkpoint="512Ki" \
     --snapshot="512Ki" \

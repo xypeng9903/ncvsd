@@ -52,8 +52,8 @@ def setup_training_config(preset: str, **opts):
     # Hyperparameters.
     c.update(
         total_nimg=opts.duration, 
-        batch_size=opts.batch, 
         net=opts.net,
+        batch_size=preset['batch'], 
         gamma=preset['gamma'],
         g_lr_scaling=preset['g_lr_scaling'],
         d_lr_scaling=preset['d_lr_scaling'],
@@ -65,9 +65,6 @@ def setup_training_config(preset: str, **opts):
     c.vsd_loss_kwargs = dnnlib.EasyDict(class_name='training.training_loop.NCVSDLoss', **preset['vsd_loss_kwargs'])
     c.dsm_loss_kwargs = dnnlib.EasyDict(class_name='training.training_loop.DSMLoss', **preset['dsm_loss_kwargs'])
     c.lr_kwargs = dnnlib.EasyDict(func_name='training.training_loop.learning_rate_schedule', **preset['lr_kwargs'])
-    c.optimizer_kwargs = dnnlib.EasyDict(class_name='torch.optim.Adam', betas=(0.9, 0.99))
-    if preset.get('optimizer_kwargs', None) is not None:
-        c.optimizer_kwargs.update(preset['optimizer_kwargs'])
     
     # Performance-related options.
     c.batch_gpu = opts.get('batch_gpu', 0) or None
@@ -158,16 +155,7 @@ def parse_int_list(s):
 @click.option('--cond',             help='Train class-conditional model', metavar='BOOL',       type=bool, default=True, show_default=True)
 @click.option('--preset',           help='Configuration preset', metavar='STR',                 type=str, required=True)
 @click.option('--ts',               help='Inference steps for evaluation', metavar='DIR',       type=str, default=None)
-
-# Hyperparameters.
 @click.option('--duration',         help='Training duration', metavar='NIMG',                   type=parse_nimg, default=None)
-@click.option('--batch',            help='Total batch size', metavar='NIMG',                    type=parse_nimg, default=None)
-@click.option('--channels',         help='Channel multiplier', metavar='INT',                   type=click.IntRange(min=64), default=None)
-@click.option('--dropout',          help='Dropout probability', metavar='FLOAT',                type=click.FloatRange(min=0, max=1), default=None)
-@click.option('--P_mean', 'P_mean', help='Noise level mean', metavar='FLOAT',                   type=float, default=None)
-@click.option('--P_std', 'P_std',   help='Noise level standard deviation', metavar='FLOAT',     type=click.FloatRange(min=0, min_open=True), default=None)
-@click.option('--lr',               help='Learning rate max. (alpha_ref)', metavar='FLOAT',     type=click.FloatRange(min=0, min_open=True), default=None)
-@click.option('--decay',            help='Learning rate decay (t_ref)', metavar='BATCHES',      type=click.FloatRange(min=0), default=None)
 
 # Performance-related options.
 @click.option('--batch-gpu',        help='Limit batch size per GPU', metavar='NIMG',            type=parse_nimg, default=0, show_default=True)
@@ -183,18 +171,11 @@ def parse_int_list(s):
 @click.option('-n', '--dry-run',    help='Print training options and exit',                     is_flag=True)
 
 def cmdline(outdir, dry_run, **opts):
-    """Train diffusion models according to the EDM2 recipe from the paper
-    "Analyzing and Improving the Training Dynamics of Diffusion Models".
-
-    Examples:
+    """Distill a generative denoiser from a pretrained EDM2 model according to the paper
+    "Noise Conditional Variational Score Distillation".
 
     \b
-    # Train XS-sized model for ImageNet-512 using 8 GPUs
-    torchrun --standalone --nproc_per_node=8 train_edm2.py \\
-        --outdir=training-runs/00000-edm2-img512-xs \\
-        --data=datasets/img512-sd.zip \\
-        --preset=edm2-img512-xs \\
-        --batch-gpu=32
+    # See README.md for examples.
 
     \b
     # To resume training, run the same command again.
