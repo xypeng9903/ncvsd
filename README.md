@@ -15,11 +15,13 @@ Start training by running
 ```bash
 bash quick_start/train-{MODEL_NAME}.sh {NUM_GPUS} {BATCH_PER_GPU}
 ```
-Note that the effective batch size 2048 should be divided by `{NUM_GPUS}` x `{BATCH_PER_GPU}`.
 
 The `{MODEL_NAME}` can be one of the following:
  - `img64-{s|m|l}`     
  - `img512-{s|m|l|xl}`
+ - `ffhq256-xs`
+
+Note that the effective batch size (2048 for ImageNet, 128 for FFHQ) should be divided by `{NUM_GPUS}` x `{BATCH_PER_GPU}`.
 
 ## Inverse problem solving
 Solving inverse problems with PnP-NCVSD by running
