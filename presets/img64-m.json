@@ -12,12 +12,12 @@
     "gan_loss_scaling": 1,
     "gan_warmup_batches": 2000,
     "vsd_loss_kwargs": {
-        "P_mean": -0.4, 
-        "P_std": 1.0
+        "P_mean": -0.8, 
+        "P_std": 1.6
     },
     "dsm_loss_kwargs": {
-        "P_mean": -0.4, 
-        "P_std": 1.0
+        "P_mean": -0.8, 
+        "P_std": 1.6
     },
     "lr_kwargs": {
         "ref_lr": 0.009,
