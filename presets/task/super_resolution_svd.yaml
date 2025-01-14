@@ -13,9 +13,11 @@ pixel:
     steps: 50
     sigma_min: 0.002
     sigma_max: 80.0
-    rho: 7.0
+    rho: 2
 
   sampler:
     ts: null
-    ema_sigma: 0.5
-    ema_decay: 0.95
+    ema_sigma: 0.2
+    ema_decay: 0.7
+
+  beta: 0.001
