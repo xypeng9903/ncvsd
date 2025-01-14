@@ -24,6 +24,7 @@ class Inpainting(LinearOperator):
     
     def proximal_generator(self, x, y, sigma, rho):
         mask = self.mask.view(1, *self.mask.shape)
-        mu = (y / sigma ** 2 * mask + x / rho ** 2) / (mask / sigma ** 2 + 1 / rho ** 2)
-        std = 1 / (mask / sigma ** 2 + 1 / rho ** 2) ** 0.5
+        v = (y - x * mask) / (sigma ** 2 + mask * rho ** 2) * mask
+        mu = x + v * rho ** 2
+        std = 1 / (1 / rho ** 2 + mask / sigma ** 2) ** 0.5
         return mu + std * torch.randn_like(mu)
