@@ -20,7 +20,7 @@ import yaml
 from torchvision import transforms
 import os
 import numpy as np
-from torchvision.transforms import Resize
+import json
 
 from training.networks_edm2 import GenerativeDenoiser
 from tasks import get_operator
@@ -137,26 +137,50 @@ def cmdline():
 @click.option('--batch', 'max_batch_size',  help='Maximum batch size', metavar='INT',                               type=click.IntRange(min=1), default=32, show_default=True)
 @click.option('--class', 'class_idx',       help='Class label  [default: random]', metavar='INT',                   type=click.IntRange(min=0), default=None)
 
+# Hyperparameters.
+@click.option('--ema-sigma', type=float, default=None)
+@click.option('--ema-decay', type=float, default=None)
+@click.option('--sigma-min', type=float, default=None)
+@click.option('--sigma-max', type=float, default=None)
+@click.option('--rho',       type=float, default=None)
+@click.option('--beta',      type=float, default=None)
+
+
 def pixel(**opts):
+    # Prepare options.
     opts = dnnlib.EasyDict(opts)
-    
     net        = opts.net
     preset     = opts.preset
     batch_size = opts.max_batch_size
     device     = torch.device('cuda')
     verbose    = True
-    
     with open(preset) as f:
         preset = yaml.safe_load(f)
     preset = dnnlib.EasyDict(preset)
     c = dnnlib.EasyDict(preset.pixel)
+    
+    # Update hyperparameters.
+    c.annealing['sigma_min'] = c.annealing['sigma_min']   if opts.sigma_min is None else opts.sigma_min
+    c.annealing['sigma_max'] = c.annealing['sigma_max']   if opts.sigma_max is None else opts.sigma_max
+    c.annealing['rho']       = c.annealing['rho']         if opts.rho       is None else opts.rho
+    c.sampler['ema_sigma']   = c.sampler['ema_sigma']     if opts.ema_sigma is None else opts.ema_sigma
+    c.sampler['ema_decay']   = c.sampler['ema_decay']     if opts.ema_decay is None else opts.ema_decay
+    c.beta                   = c.beta                     if opts.beta      is None else opts.beta
+    
+    # Prepare output directory.
+    dist.print0(f'Create output directory {opts.outdir} ...')
+    os.makedirs(opts.outdir, exist_ok=True)
+    
+    # Save options.
+    with open(os.path.join(opts.outdir, 'options.json'), 'wt') as f:
+        json.dump(c, f, indent=2)
     
     # Prepare data.
     dist.print0('Loading dataset...')
     dataset = ImageFolderDataset(opts.data)
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size)
     
-    # Load main network.
+    # Prepare model.
     if verbose:
         dist.print0(f'Loading network from {net} ...')
     with dnnlib.util.open_url(net, verbose=(verbose and dist.get_rank() == 0)) as f:
@@ -172,15 +196,11 @@ def pixel(**opts):
     # Prepare annealing schedule.
     sigmas = karras_sigmas(**c.annealing, device=device)
     
-    # get evaluator
+    # Prepare evaluator.
     eval_fn_list = []
     for eval_fn_name in ['psnr', 'ssim', 'lpips']:
         eval_fn_list.append(get_eval_fn(eval_fn_name))
     evaluator = Evaluator(eval_fn_list)
-    
-    # Prepare output directory.
-    dist.print0(f'Create output directory {opts.outdir} ...')
-    os.makedirs(opts.outdir, exist_ok=True)
     
     # Inference.
     full_images = []
@@ -195,9 +215,9 @@ def pixel(**opts):
         
         # PnP-NCVSD.
         if hasattr(operator, 'proximal_generator'):
-            likelihood_step_fn = lambda x0, sigma, pbar: operator.proximal_generator(x0, y, sigma_y, sigma)
+            likelihood_step_fn = lambda x0, sigma, pbar: operator.proximal_generator(x0, y, (0.5 * c.beta) ** 0.5, sigma) # \beta = 2 \sigma_y^2
         else:
-            likelihood_step_fn = lambda x0, sigma, pbar: ula_proximal_generator(x0, sigma, y, operator.forward, pbar=pbar, **c.lgvd)
+            likelihood_step_fn = lambda x0, sigma, pbar: ula_proximal_generator(x0, sigma, y, operator.forward, beta=c.beta, pbar=pbar, **c.lgvd)
         noise = torch.randn_like(images)
         x0hat = pnp_ncvsd_sampler(net, noise, sigmas, likelihood_step_fn, verbose=True, **c.sampler)
         
@@ -218,81 +238,11 @@ def pixel(**opts):
     markdown_text = evaluator.display(results)
     print(markdown_text)
     
-#----------------------------------------------------------------------------
-# 'latent' subcommand.
-
-@cmdline.command()
-@click.option('--net',                      help='Network pickle filename', metavar='PATH|URL',                     type=str, required=True)
-@click.option('--data',                     help='Path to the dataset', metavar='ZIP|DIR',                          type=str, required=True)
-@click.option('--preset',                   help='Configuration preset', metavar='STR',                             type=str, required=True)
-@click.option('--outdir',                   help='Where to save the output images', metavar='DIR',                  type=str, required=True)
-@click.option('--seeds',                    help='List of random seeds (e.g. 1,2,5-10)', metavar='LIST',            type=parse_int_list, default='16-19', show_default=True)
-@click.option('--batch', 'max_batch_size',  help='Maximum batch size', metavar='INT',                               type=click.IntRange(min=1), default=32, show_default=True)
-@click.option('--class', 'class_idx',       help='Class label  [default: random]', metavar='INT',                   type=click.IntRange(min=0), default=None)
-
-def latent(**opts):
-    """Inverse problem solving using PnP-NCVSD in latent space.
-
-    TODO: Examples:
-
-    """
-    opts = dnnlib.EasyDict(opts)
+    # Save evaluation results.
+    with open(os.path.join(opts.outdir, 'eval.md'), 'wt') as f:
+        f.write(markdown_text)
+    json.dump(results, open(os.path.join(opts.outdir, 'metrics.json'), 'w'), indent=2)
     
-    #----------------------------------------------------------------------------
-    # Main.
-    
-    net        = opts.net
-    preset     = opts.preset
-    batch_size = opts.max_batch_size
-    device     = torch.device('cuda')
-    verbose    = True
-    
-    with open(preset) as f:
-        preset = yaml.safe_load(f)
-    preset = dnnlib.EasyDict(preset)
-    c = dnnlib.EasyDict(preset.latent)
-    
-    # Prepare data.
-    dist.print0('Loading dataset...')
-    dataset = ImageFolderDataset(opts.data)
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size)
-    
-    # Load main network.
-    if verbose:
-        dist.print0(f'Loading network from {net} ...')
-    with dnnlib.util.open_url(net, verbose=(verbose and dist.get_rank() == 0)) as f:
-        data = pickle.load(f)
-    net = data['ema'].to(device)
-    encoder = dnnlib.util.construct_class_by_name(class_name='training.encoders.StabilityVAEEncoder')
-    rgb_encoder = dnnlib.util.construct_class_by_name(class_name='training.encoders.StandardRGBEncoder')
-    
-    # Prepare operator.
-    dist.print0(f'Operator: {preset.operator}')
-    operator = get_operator(**preset.operator, device=device)
-    sigma_y = preset.noise['sigma']
-    
-    # Prepare annealing schedule.
-    sigmas = karras_sigmas(**c.annealing, device=device)
-    
-    # Prepare output directory.
-    dist.print0(f'Create output directory {opts.outdir} ...')
-    os.makedirs(opts.outdir, exist_ok=True)
-    
-    # Inference.
-    for i, batch in enumerate(tqdm.tqdm(dataloader)):
-        images, labels = batch
-        images = rgb_encoder.encode_latents(images.to(device))
-        y = operator.forward(images)
-        y = y + torch.randn_like(y) * sigma_y
-        latent_operator = lambda x0: operator.forward(Resize(images.shape[-2:])(encoder.decode(x0, uint8=False)) * 2 - 1)
-        likelihood_step_fn = lambda x0, sigma, pbar: ula_proximal_generator(x0, sigma, y, latent_operator, pbar=pbar, **c.lgvd)
-        noise = torch.randn(batch_size, net.img_channels, net.img_resolution, net.img_resolution, device=device)
-        x0hat = pnp_ncvsd_sampler(net, noise, sigmas, likelihood_step_fn, verbose=True, **c.sampler)
-        x0hat = Resize(images.shape[-2:])(encoder.decode(x0hat))
-        for j, out in enumerate(x0hat):
-            out = transforms.ToPILImage()(out)
-            out.save(f'{opts.outdir}/{i * batch_size + j}.png')
-
 #----------------------------------------------------------------------------
 
 if __name__ == "__main__":
