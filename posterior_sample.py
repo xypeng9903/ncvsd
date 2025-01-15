@@ -160,12 +160,12 @@ def pixel(**opts):
     c = dnnlib.EasyDict(preset.pixel)
     
     # Update hyperparameters.
-    c.annealing['sigma_min'] = c.annealing['sigma_min']   if opts.sigma_min is None else opts.sigma_min
-    c.annealing['sigma_max'] = c.annealing['sigma_max']   if opts.sigma_max is None else opts.sigma_max
-    c.annealing['rho']       = c.annealing['rho']         if opts.rho       is None else opts.rho
-    c.sampler['ema_sigma']   = c.sampler['ema_sigma']     if opts.ema_sigma is None else opts.ema_sigma
-    c.sampler['ema_decay']   = c.sampler['ema_decay']     if opts.ema_decay is None else opts.ema_decay
-    c.beta                   = c.beta                     if opts.beta      is None else opts.beta
+    c.annealing['sigma_min'] = float(c.annealing['sigma_min'])   if opts.sigma_min is None else opts.sigma_min
+    c.annealing['sigma_max'] = float(c.annealing['sigma_max'])   if opts.sigma_max is None else opts.sigma_max
+    c.annealing['rho']       = float(c.annealing['rho'])         if opts.rho       is None else opts.rho
+    c.sampler['ema_sigma']   = float(c.sampler['ema_sigma'])     if opts.ema_sigma is None else opts.ema_sigma
+    c.sampler['ema_decay']   = float(c.sampler['ema_decay'])     if opts.ema_decay is None else opts.ema_decay
+    c.beta                   = float(c.beta)                     if opts.beta      is None else opts.beta
     
     # Prepare output directory.
     dist.print0(f'Create output directory {opts.outdir} ...')
@@ -229,6 +229,12 @@ def pixel(**opts):
         for j, out in enumerate(x0hat):
             out = transforms.ToPILImage()(out)
             out.save(f'{opts.outdir}/{i * batch_size + j}.png')
+            
+        # Save measurements.
+        # y = encoder.decode(y)
+        # for j, out in enumerate(y):
+        #     out = transforms.ToPILImage()(out)
+        #     out.save(f'{opts.outdir}/{i * batch_size + j}_y.png')
             
     # Evaluation.
     full_samples = torch.cat(full_samples, dim=0)

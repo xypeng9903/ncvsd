@@ -339,8 +339,7 @@ def training_loop(
 
         # Save network snapshot and evaluate.
         if snapshot_nimg is not None and state.cur_nimg % snapshot_nimg == 0 and (state.cur_nimg != start_nimg or start_nimg == 0) and dist.get_rank() == 0:
-            gc.collect()
-            torch.cuda.empty_cache()
+            gc.collect(); torch.cuda.empty_cache()
             ema_list = ema_generator.get()
             ema_list = ema_list if isinstance(ema_list, list) else [(ema_list, '')]
             for ema_net, ema_suffix in ema_list:
@@ -351,7 +350,7 @@ def training_loop(
                 with open(os.path.join(run_dir, fname), 'wb') as f:
                     pickle.dump(data, f)
                 dist.print0('done')
-                del data # conserve memory
+                del data; gc.collect(); torch.cuda.empty_cache()
                 
                 # Export sample images.
                 if dist.get_rank() == 0 and eval_ts is not None:
@@ -364,7 +363,7 @@ def training_loop(
                                        for batch, batch_labels in zip(z.split(eval_batch_size), labels.split(eval_batch_size))])
                         x = encoder.decode(x).cpu()
                         save_image(x.float() / 255., os.path.join(run_dir, f'{fname}.png'), nrow=int(num_eval_samples ** 0.5))
-                        del x
+                        del x; gc.collect(); torch.cuda.empty_cache()
         
         # Save state checkpoint.
         if checkpoint_nimg is not None and (done or state.cur_nimg % checkpoint_nimg == 0) and state.cur_nimg != start_nimg:
