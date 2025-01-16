@@ -3,4 +3,4 @@ training-runs/
 *.ipynb
 out/
 *.out
-*.sh
+/*.sh
