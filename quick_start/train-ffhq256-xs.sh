@@ -11,5 +11,5 @@ torchrun --standalone --nproc_per_node=$NUM_GPUS train_edm2.py \
     --duration="2Mi" \
     --checkpoint="32Ki" \
     --snapshot="32Ki" \
-    --ts="10,22,39" \
+    --ts="0,14,39" \
     --ls=0.1
