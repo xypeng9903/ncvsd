@@ -195,3 +195,5 @@ from .super_resolution_svd import SuperResolution
 from .coded_diffraction_patterns import CodedDiffractionPatterns
 from .phase_retrieval import PhaseRetrieval
 from .inpainting import Inpainting
+from .high_dynamic_range import HighDynamicRange
+from .nonlinear_blur import NonlinearBlur
