@@ -144,6 +144,7 @@ def cmdline():
 @click.option('--sigma-max', type=float, default=None)
 @click.option('--rho',       type=float, default=None)
 @click.option('--beta',      type=float, default=None)
+@click.option('--runs',      type=int,   default=None)
 
 
 def pixel(**opts):
@@ -166,6 +167,7 @@ def pixel(**opts):
     c.sampler['ema_sigma']   = float(c.sampler['ema_sigma'])     if opts.ema_sigma is None else opts.ema_sigma
     c.sampler['ema_decay']   = float(c.sampler['ema_decay'])     if opts.ema_decay is None else opts.ema_decay
     c.beta                   = float(c.beta)                     if opts.beta      is None else opts.beta
+    c.runs                   = int(c.get('runs', 1))             if opts.runs      is None else opts.runs
     
     # Prepare output directory.
     dist.print0(f'Create output directory {opts.outdir} ...')
@@ -206,7 +208,9 @@ def pixel(**opts):
     full_images = []
     full_samples = []
     full_ys = []
-    for i, batch in enumerate(tqdm.tqdm(dataloader)):
+    for i, batch in enumerate(dataloader):
+        dist.print0(f'Batch {i + 1} / {len(dataloader)} start, Total runs: {c.runs}')
+        
         # Get measurements.
         images, labels = batch
         images = encoder.encode_latents(images.to(device))
@@ -218,28 +222,24 @@ def pixel(**opts):
             likelihood_step_fn = lambda x0, sigma, pbar: operator.proximal_generator(x0, y, (0.5 * c.beta) ** 0.5, sigma) # \beta = 2 \sigma_y^2
         else:
             likelihood_step_fn = lambda x0, sigma, pbar: ula_proximal_generator(x0, sigma, y, operator.forward, beta=c.beta, pbar=pbar, **c.lgvd)
-        noise = torch.randn_like(images)
-        x0hat = pnp_ncvsd_sampler(net, noise, sigmas, likelihood_step_fn, verbose=True, **c.sampler)
+        sampler = lambda noise: pnp_ncvsd_sampler(net, noise, sigmas, likelihood_step_fn, verbose=True, **c.sampler)
+        x0hat = torch.cat([sampler(torch.randn_like(images)).unsqueeze(0) for _ in range(c.runs)])
         
         # Save samples.
         full_images.append(images.cpu())
         full_ys.append(y.cpu())
         full_samples.append(x0hat.cpu())
-        x0hat = encoder.decode(x0hat)
-        for j, out in enumerate(x0hat):
-            out = transforms.ToPILImage()(out)
-            out.save(f'{opts.outdir}/{i * batch_size + j}.png')
-            
-        # Save measurements.
-        # y = encoder.decode(y)
-        # for j, out in enumerate(y):
-        #     out = transforms.ToPILImage()(out)
-        #     out.save(f'{opts.outdir}/{i * batch_size + j}_y.png')
-            
+        for j in range(x0hat.shape[0]):
+            for k in range(x0hat.shape[1]):
+                x0pil = transforms.ToPILImage()(encoder.decode(x0hat[j, k]))
+                rundir = os.path.join(opts.outdir, f"runs_{j}")
+                os.makedirs(rundir, exist_ok=True)
+                x0pil.save(os.path.join(rundir, f"{i * batch_size + k}.png"))
+                        
     # Evaluation.
-    full_samples = torch.cat(full_samples, dim=0)
-    full_ys = torch.cat(full_ys, dim=0)
-    full_images = torch.cat(full_images, dim=0)
+    full_samples = torch.cat(full_samples, dim=1) # runs, B, C, H, W
+    full_ys = torch.cat(full_ys, dim=0)           # B, C, H, W
+    full_images = torch.cat(full_images, dim=0)   # B, C, H, W
     results = evaluator.report(full_images, full_ys, full_samples)
     markdown_text = evaluator.display(results)
     print(markdown_text)

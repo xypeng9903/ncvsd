@@ -8,17 +8,21 @@ noise:
 
 pixel:
   annealing:
-    steps: 100
+    steps: 50
     sigma_min: 0.002
     sigma_max: 80.0
-    rho: 7.0
+    rho: 2
 
   sampler:
     ts: null
-    ema_sigma: 0.5
-    ema_decay: 0.99
+    ema_sigma: 0.2
+    ema_decay: 0.6
 
   lgvd:
-    beta: 0.0025
-    c2: 1
+    c1: 0.1
+    c2: 0.1
     steps: 100
+  
+  beta: 0.001
+
+  runs: 4
