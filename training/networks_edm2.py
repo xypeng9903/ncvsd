@@ -598,7 +598,8 @@ class PrecondCondition(torch.nn.Module):
         return self
     
 #----------------------------------------------------------------------------
-# Generative denoiser.
+# Generative denoiser. The multi-step sampling interface (specifying `ts` in the `forward`` method) 
+# is the same as the consistency model (https://github.com/openai/consistency_models/blob/e32b69ee436d518377db86fb2127a3972d0d8716/cm/karras_diffusion.py#L657).
 
 class GenerativeDenoiser(torch.nn.Module):
     def __init__(self,
