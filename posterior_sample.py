@@ -223,7 +223,7 @@ def pixel(**opts):
         else:
             likelihood_step_fn = lambda x0, sigma, pbar: ula_proximal_generator(x0, sigma, y, operator.forward, beta=c.beta, pbar=pbar, **c.lgvd)
         sampler = lambda noise: pnp_ncvsd_sampler(net, noise, sigmas, likelihood_step_fn, verbose=True, **c.sampler)
-        x0hat = torch.cat([sampler(torch.randn_like(images)).unsqueeze(0) for _ in range(c.runs)])
+        x0hat = torch.stack([sampler(torch.randn_like(images)) for _ in range(c.runs)], dim=0) # runs, B, C, H, W
         
         # Save samples.
         full_images.append(images.cpu())
