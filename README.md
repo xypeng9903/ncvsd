@@ -31,7 +31,7 @@ bash quick_start/eval-img64.sh  {NUM_GPUS} {SNAPSHOT.pkl} 10,22,39  # 2-step fid
 bash quick_start/eval-img512.sh {NUM_GPUS} {SNAPSHOT.pkl} 12,39     # 1-step fid on ImageNet-512x512
 bash quick_start/eval-img512.sh {NUM_GPUS} {SNAPSHOT.pkl} 10,22,39  # 2-step fid on ImageNet-512x512
 bash quick_start/eval-img512.sh {NUM_GPUS} {SNAPSHOT.pkl} 0,39      # 1-step fid on FFHQ-256x256
-bash quick_start/eval-img512.sh {NUM_GPUS} {SNAPSHOT.pkl} 0,14,39   # 2-step fid on FFHQ-256x256
+bash quick_start/eval-ffhq256.sh {NUM_GPUS} {SNAPSHOT.pkl} 0,14,39  # 2-step fid on FFHQ-256x256
 ```
 
 ## Inverse problem solving
