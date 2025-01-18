@@ -26,16 +26,16 @@ Note that the effective batch size (2048 for ImageNet, 128 for FFHQ) should be d
 ## Evaluation
 **ImageNet-64x64:**
 ```bash
-bash quick_start/eval-img64.sh   {NUM_GPUS} {SNAPSHOT.pkl} 12,39         # 1-step FID
-bash quick_start/eval-img64.sh   {NUM_GPUS} {SNAPSHOT.pkl} 10,22,39      # 2-step FID
-bash quick_start/eval-img64.sh   {NUM_GPUS} {SNAPSHOT.pkl} 0,10,20,30,39 # 4-step FID
+bash quick_start/eval-img64.sh {NUM_GPUS} {SNAPSHOT.pkl} 12,39         # 1-step FID
+bash quick_start/eval-img64.sh {NUM_GPUS} {SNAPSHOT.pkl} 10,22,39      # 2-step FID
+bash quick_start/eval-img64.sh {NUM_GPUS} {SNAPSHOT.pkl} 0,10,20,30,39 # 4-step FID
 ```
 
 **ImageNet-512x512:**
 ```bash
-bash quick_start/eval-img512.sh  {NUM_GPUS} {SNAPSHOT.pkl} 12,39         # 1-step FID
-bash quick_start/eval-img512.sh  {NUM_GPUS} {SNAPSHOT.pkl} 10,22,39      # 2-step FID
-bash quick_start/eval-img512.sh  {NUM_GPUS} {SNAPSHOT.pkl} 0,10,20,30,39 # 4-step FID
+bash quick_start/eval-img512.sh {NUM_GPUS} {SNAPSHOT.pkl} 12,39         # 1-step FID
+bash quick_start/eval-img512.sh {NUM_GPUS} {SNAPSHOT.pkl} 10,22,39      # 2-step FID
+bash quick_start/eval-img512.sh {NUM_GPUS} {SNAPSHOT.pkl} 0,10,20,30,39 # 4-step FID
 ```
 
 **FFHQ-256x256:**
