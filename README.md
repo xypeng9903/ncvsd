@@ -40,7 +40,7 @@ bash quick_start/eval-img512.sh {NUM_GPUS} {SNAPSHOT.pkl} 0,10,20,30,39 # 4-step
 
 **FFHQ-256x256:**
 ```bash
-bash quick_start/eval-img512.sh  {NUM_GPUS} {SNAPSHOT.pkl} 0,39          # 1-step FID
+bash quick_start/eval-ffhq256.sh  {NUM_GPUS} {SNAPSHOT.pkl} 0,39          # 1-step FID
 bash quick_start/eval-ffhq256.sh {NUM_GPUS} {SNAPSHOT.pkl} 0,14,39       # 2-step FID
 bash quick_start/eval-ffhq256.sh {NUM_GPUS} {SNAPSHOT.pkl} 0,10,20,30,39 # 4-step FID
 ```
