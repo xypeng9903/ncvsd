@@ -209,7 +209,7 @@ def pixel(**opts):
     full_samples = []
     full_ys = []
     for i, batch in enumerate(dataloader):
-        dist.print0(f'Batch {i + 1} / {len(dataloader)} start, Total runs: {c.runs}')
+        dist.print0(f'Batch {i + 1} / {len(dataloader)} start. Total runs: {c.runs}')
         
         # Get measurements.
         images, labels = batch
