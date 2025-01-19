@@ -4,10 +4,9 @@ from . import register_operator, NonLinearOperator
 
 @register_operator(name='high_dynamic_range')
 class HighDynamicRange(NonLinearOperator):
-    def __init__(self, device='cuda', scale=2, sigma=0.05):
-        super().__init__(sigma)
-        self.device = device
+    def __init__(self, scale, device):
+        super().__init__()
         self.scale = scale
 
-    def __call__(self, data):
+    def forward(self, data):
         return torch.clip((data * self.scale), -1, 1)
