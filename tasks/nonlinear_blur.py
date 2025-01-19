@@ -6,8 +6,8 @@ import numpy as np
 
 @register_operator(name='nonlinear_blur')
 class NonlinearBlur(NonLinearOperator):
-    def __init__(self, opt_yml_path, device='cuda', sigma=0.05):
-        super().__init__(sigma)
+    def __init__(self, opt_yml_path, device='cuda'):
+        super().__init__()
         self.device = device
         self.blur_model = self.prepare_nonlinear_blur_model(opt_yml_path)
         self.blur_model.requires_grad_(False)
@@ -41,7 +41,7 @@ class NonlinearBlur(NonLinearOperator):
         blurred = (blurred * 2.0 - 1.0).clamp(-1, 1)  # [0, 1] -> [-1, 1]
         return blurred
 
-    def __call__(self, data):
+    def forward(self, data):
         data = (data + 1.0) / 2.0  # [-1, 1] -> [0, 1]
 
         random_kernel = self.random_kernel.repeat(data.shape[0], 1, 1, 1)
