@@ -118,6 +118,7 @@ def cmdline():
 @click.option('--outdir',                   help='Where to save the output images', metavar='DIR',                  type=str, required=True)
 @click.option('--batch', 'max_batch_size',  help='Maximum batch size', metavar='INT',                               type=click.IntRange(min=1), default=32, show_default=True)
 @click.option('--class', 'class_idx',       help='Class label  [default: random]', metavar='INT',                   type=click.IntRange(min=0), default=None)
+@click.option('--seed',                     help='Random seed', metavar='INT',                                      type=int, default=42)
 
 # Hyperparameters.
 @click.option('--ema-sigma', type=float, default=None)
@@ -141,6 +142,13 @@ def pixel(**opts):
         preset = yaml.safe_load(f)
     preset = dnnlib.EasyDict(preset)
     c = dnnlib.EasyDict(preset.pixel)
+    
+    # fix random seed
+    np.random.seed(opts.seed)
+    torch.manual_seed(opts.seed)
+    torch.manual_seed(opts.seed)
+    torch.cuda.manual_seed_all(opts.seed)
+    torch.backends.cudnn.deterministic = True
     
     # Update hyperparameters.
     c.annealing['sigma_min'] = float(c.annealing['sigma_min'])   if opts.sigma_min is None else opts.sigma_min
@@ -217,6 +225,11 @@ def pixel(**opts):
                 rundir = os.path.join(opts.outdir, f"runs_{j}")
                 os.makedirs(rundir, exist_ok=True)
                 x0pil.save(os.path.join(rundir, f"{i * batch_size + k}.png"))
+        for j in range(y.shape[0]):
+            ypil = transforms.ToPILImage()(encoder.decode(y[j]))
+            ydir = os.path.join(opts.outdir, "measurements")
+            os.makedirs(ydir, exist_ok=True)
+            ypil.save(os.path.join(ydir, f"{i * batch_size + j}.png"))
                         
     # Evaluation.
     full_samples = torch.cat(full_samples, dim=1) # runs, B, C, H, W
