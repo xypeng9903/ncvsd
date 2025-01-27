@@ -3,7 +3,7 @@ from . import register_operator, LinearSVDOperator
 
 
 @register_operator(name='super_resolution_svd')
-class SuperResolution(LinearSVDOperator):
+class SuperResolutionSVD(LinearSVDOperator):
     def __init__(self, channels, img_dim, ratio, device): #ratio = 2 or 4
         assert img_dim % ratio == 0
         self.img_dim = img_dim
