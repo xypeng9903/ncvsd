@@ -118,16 +118,17 @@ def cmdline():
 @click.option('--outdir',                   help='Where to save the output images', metavar='DIR',                  type=str, required=True)
 @click.option('--batch', 'max_batch_size',  help='Maximum batch size', metavar='INT',                               type=click.IntRange(min=1), default=32, show_default=True)
 @click.option('--class', 'class_idx',       help='Class label  [default: random]', metavar='INT',                   type=click.IntRange(min=0), default=None)
-@click.option('--seed',                     help='Random seed', metavar='INT',                                      type=int, default=42)
+@click.option('--seed',                     help='Random seed', metavar='INT',                                      type=int, default=0)
 
 # Hyperparameters.
-@click.option('--ema-sigma', type=float, default=None)
-@click.option('--ema-decay', type=float, default=None)
-@click.option('--sigma-min', type=float, default=None)
-@click.option('--sigma-max', type=float, default=None)
-@click.option('--rho',       type=float, default=None)
-@click.option('--beta',      type=float, default=None)
-@click.option('--runs',      type=int,   default=None)
+@click.option('--ema-sigma',   type=float, default=None)
+@click.option('--ema-decay',   type=float, default=None)
+@click.option('--sigma-min',   type=float, default=None)
+@click.option('--sigma-max',   type=float, default=None)
+@click.option('--rho',         type=float, default=None)
+@click.option('--beta',        type=float, default=None)
+@click.option('--runs',        type=int,   default=None)
+@click.option('--avg-sample',  type=bool,  default=False)
 
 
 def pixel(**opts):
@@ -145,7 +146,6 @@ def pixel(**opts):
     
     # fix random seed
     np.random.seed(opts.seed)
-    torch.manual_seed(opts.seed)
     torch.manual_seed(opts.seed)
     torch.cuda.manual_seed_all(opts.seed)
     torch.backends.cudnn.deterministic = True
