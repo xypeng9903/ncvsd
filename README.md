@@ -42,7 +42,7 @@ Note that the effective batch size (2048 for ImageNet, 128 for FFHQ) should be d
 | - | - | - | - |
 NCVSD-S | 2.94 | 2.30 | 2.06 |
 NCVSD-M |  |  |  |
-NCVSD-L |  | 2.02 | 1.84 |
+NCVSD-L | 2.93 | 2.02 | 1.84 |
 
 To reproduce the results in Table 1, run
 ```bash
