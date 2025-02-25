@@ -35,7 +35,7 @@ The `{MODEL_NAME}` can be one of the following:
 
 Note that the effective batch size (2048 for ImageNet, 128 for FFHQ) should be divided by `{NUM_GPUS}` x `{BATCH_PER_GPU}`.
 
-## Evaluation
+## Class-conditional image generation
 ### ImageNet-64x64
 *Table 1. FID on ImageNet-64x64*
 | Model | 1-step FID | 2-step FID | 4-step FID |
