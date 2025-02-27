@@ -56,14 +56,14 @@ class NCVSDLoss:
         self.sigma_data = sigma_data
 
     def __call__(
-            self, 
-            generator,
-            net,
-            score_model, 
-            discriminator,
-            y: torch.Tensor, 
-            sigma: torch.Tensor,
-            labels: torch.Tensor = None
+        self, 
+        generator,
+        net,
+        score_model, 
+        discriminator,
+        y: torch.Tensor, 
+        sigma: torch.Tensor,
+        labels: torch.Tensor = None
     ):        
         x, logvar = generator(y, sigma, labels, return_logvar=True)
         
@@ -99,12 +99,12 @@ class DSMLoss:
         self.sigma_data = sigma_data
 
     def __call__(
-            self, 
-            generator,
-            score_model,
-            y: torch.Tensor, 
-            sigma: torch.Tensor,
-            labels: torch.Tensor = None
+        self, 
+        generator,
+        score_model,
+        y: torch.Tensor, 
+        sigma: torch.Tensor,
+        labels: torch.Tensor = None
     ): 
         with torch.no_grad():
             x = generator(y, sigma, labels)
@@ -133,13 +133,13 @@ class DiscriminatorLoss:
         self.sigma_data = sigma_data
 
     def __call__(
-            self, 
-            generator,
-            discriminator,
-            images: torch.Tensor,
-            y: torch.Tensor, 
-            sigma: torch.Tensor,
-            labels: torch.Tensor = None
+        self, 
+        generator,
+        discriminator,
+        images: torch.Tensor,
+        y: torch.Tensor, 
+        sigma: torch.Tensor,
+        labels: torch.Tensor = None
     ): 
         with torch.no_grad():
             x = generator(y, sigma, labels)
@@ -189,7 +189,7 @@ def training_loop(
     eval_batch_size           = 8,         # Batch size for evaluation.
     g_lr_scaling              = 1,         # Learning rate scaling factor for the generator.
     d_lr_scaling              = 1,         # Learning rate scaling factor for the discriminator.
-    gan_warmup_batches        = 0,         # Number of batches to warm up the GAN loss.
+    gan_warmup_Kimg           = 33555,     # Number of batches to warm up the GAN loss.
  
     run_dir                   = '.',       # Output directory.
     seed                      = 0,         # Global random seed.
@@ -453,7 +453,7 @@ def training_loop(
         ddp_discriminator.eval().requires_grad_(False)
         ddp_generator.train().requires_grad_(True)
         g_optimizer.zero_grad(set_to_none=True)        
-        disable_gan = state.cur_nimg < gan_warmup_batches * batch_size
+        disable_gan = state.cur_nimg < gan_warmup_Kimg * 1000
 
         # Forward & backward.
         for round_idx in range(num_accumulation_rounds):

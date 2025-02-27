@@ -10,7 +10,7 @@
     "g_lr_scaling": 0.01,
     "d_lr_scaling": 0.01,
     "gan_loss_scaling": 1,
-    "gan_warmup_batches": 2000,
+    "gan_warmup_Kimg": 2098,
     "vsd_loss_kwargs": {
         "P_mean": -0.8, 
         "P_std": 1.6
@@ -21,8 +21,8 @@
     },
     "lr_kwargs": {
         "ref_lr": 0.0120,
-        "ref_batches": 3500,
-        "rampup_Mimg": 0
+        "ref_batches": 35000,
+        "rampup_Mimg": 1
     },
     "batch": 128
 }
