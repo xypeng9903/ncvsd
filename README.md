@@ -1,5 +1,6 @@
 ## Noise Conditional Variational Score Distillation <br><sub>Official PyTorch implementation</sub>
 
+![Overview](assets/overview.jpg "Overview")
 
 **Noise Conditional Variational Score Distillation** <br>
 Xinyu Peng, Ziyang Zheng, Yaoming Wang, Han Li, Nuowen Kan, Wenrui Dai, Chenglin Li, Junni Zou, Hongkai Xiong <br>
