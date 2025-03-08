@@ -1,4 +1,4 @@
-## Noise Conditional Variational Score Distillation <br><sub>Official PyTorch implementation</sub>
+## Noise Conditional Variational Score Distillation &mdash; Official PyTorch implementation
 
 ![Overview](assets/overview.jpg "Overview")
 
