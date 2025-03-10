@@ -10,23 +10,23 @@ https://arxiv.org/abs/2402.02149v2
 
 
 ## Requirements
-
-### Environment
+**Environment:**
 * 64-bit Python 3.9 and PyTorch 2.1 (or later, see https://pytorch.org for install instructions).
 * Python libraries: `pip3 install click Pillow psutil requests scipy tqdm accelerate diffusers tensorboard`
 
-### Data and pretrained EDM2 models
+**Data:**
 Follow the instructions in [EDM2](https://github.com/NVlabs/edm2?tab=readme-ov-file#preparing-datasets) to prepare the following zip files into the `../data/edm2` folder:
 - `img64.zip`
 - `img512.zip`
 - `img512-sd.zip`
 
-Download pretrained EDM2 models into `../model_zoo/edm2` folder from the links listed in `quick_start/edm2.txt`.
+**Teacher EDM2 models:**
+Download EDM2 models into `../model_zoo/edm2` folder from the links listed in `quick_start/edm2.txt`.
 
 ## Training
 Start training by running
 ```bash
-bash quick_start/train-{MODEL_NAME}.sh {NUM_GPUS} {BATCH_PER_GPU}
+bash quick_start/train-{MODEL_NAME}.sh {NUM_GPUS}
 ```
 
 The `{MODEL_NAME}` can be one of the following:
@@ -34,7 +34,7 @@ The `{MODEL_NAME}` can be one of the following:
  - `img512-{s|m|l}`
  - `ffhq256-xs`
 
-Note that the effective batch size (2048 for ImageNet, 128 for FFHQ) should be divided by `{NUM_GPUS}` x `{BATCH_PER_GPU}`.
+\* The batch size per gpu (controlled by `--batch-gpu` in the bash scripts) has been optimized for training under NVIDIA A100-80G GPUs. If you run out of GPU memory, please consider modifying `--batch-gpu` to reduce memory cost. Note that similar to the [EDM2 training](https://github.com/NVlabs/edm2?tab=readme-ov-file#training-new-models), modifying `--batch-gpu` is safe in the sense that it has no interaction with the other hyperparameters.  
 
 ## Class-conditional image generation
 ### ImageNet-64x64
@@ -47,9 +47,9 @@ NCVSD-L | 2.93 | 2.02 | 1.84 |
 
 To reproduce the results in Table 1, run
 ```bash
-bash quick_start/eval-img64.sh {NUM_GPUS} {SNAPSHOT.pkl} 12,39         # 1-step FID
-bash quick_start/eval-img64.sh {NUM_GPUS} {SNAPSHOT.pkl} 10,22,39      # 2-step FID
-bash quick_start/eval-img64.sh {NUM_GPUS} {SNAPSHOT.pkl} 0,10,20,30,39 # 4-step FID
+bash quick_start/eval-img64.sh {NUM_GPUS} 12,39         # 1-step FID
+bash quick_start/eval-img64.sh {NUM_GPUS} 10,22,39      # 2-step FID
+bash quick_start/eval-img64.sh {NUM_GPUS} 0,10,20,30,39 # 4-step FID
 ```
 
 ### ImageNet-512x512
@@ -62,9 +62,9 @@ NCVSD-L | 2.92 | 2.18 | 1.57 |
 
 To reproduce the results in Table 2, run
 ```bash
-bash quick_start/eval-img512.sh {NUM_GPUS} {SNAPSHOT.pkl} 12,39         # 1-step FID
-bash quick_start/eval-img512.sh {NUM_GPUS} {SNAPSHOT.pkl} 10,22,39      # 2-step FID
-bash quick_start/eval-img512.sh {NUM_GPUS} {SNAPSHOT.pkl} 0,10,20,30,39 # 4-step FID
+bash quick_start/eval-img512.sh {NUM_GPUS} 12,39         # 1-step FID
+bash quick_start/eval-img512.sh {NUM_GPUS} 10,22,39      # 2-step FID
+bash quick_start/eval-img512.sh {NUM_GPUS} 0,10,20,30,39 # 4-step FID
 ```
 
 ## Inverse problem solving
