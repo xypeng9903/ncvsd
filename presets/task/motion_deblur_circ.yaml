@@ -1,7 +1,7 @@
 operator:
-  name: motion_blur_circ
+  name: gaussian_blur_circ
   kernel_size: 61
-  intensity: 0.5
+  intensity: 3.0
   channels: 3
   img_dim: 256
 
@@ -18,7 +18,7 @@ pixel:
 
   sampler:
     ts: null
-    ema_sigma: 0.2
+    ema_sigma: 100
     ema_decay: 0.6
 
-  beta: 0.003
+  beta: 4e-3

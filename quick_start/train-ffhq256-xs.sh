@@ -1,13 +1,12 @@
-NUM_GPUS=$1
-BATCH_GPU=$2
+DISTRIBUTED_ARGS="--standalone --nproc_per_node=8"
 
-torchrun --standalone --nproc_per_node=$NUM_GPUS train_edm2.py \
+torchrun $DISTRIBUTED_ARGS train_edm2.py \
     --preset="presets/ffhq256-xs.json" \
     --outdir="training-runs/ffhq256-xs" \
     --net="training-runs/edm2-ffhq256-xs/network-snapshot-0013631-0.050.pkl" \
     --data="../data/edm2/ffhq256.zip" \
     --cond=False \
-    --batch-gpu=$BATCH_GPU \
+    --batch-gpu=16 \
     --duration="4Mi" \
     --checkpoint="256Ki" \
     --snapshot="64Ki" \

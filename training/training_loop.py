@@ -29,30 +29,40 @@ from torch.utils.tensorboard import SummaryWriter
 
 
 #----------------------------------------------------------------------------
-# Karras inference sigma sampler.
+# Uniform sampler on Karras inference time noise schedule.
 
-def karras_sigma_sampler(batch_size, device, sigma_min=0.002, sigma_max=80.0, rho=7.0, steps=1000):
-    ramp = torch.linspace(0, 1, steps, device=device)
-    min_inv_rho = sigma_min ** (1 / rho)
-    max_inv_rho = sigma_max ** (1 / rho)
-    sigmas = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho
-    idx = torch.randint(0, steps, [batch_size])
-    sigma = sigmas[idx].view(-1, 1, 1, 1)
-    return sigma
+class UniformNoiseSampler:
+    def __init__(self, sigma_min=0.002, sigma_max=80.0, rho=7, steps=1000):
+        ramp = torch.linspace(0, 1, steps)
+        min_inv_rho = sigma_min ** (1 / rho)
+        max_inv_rho = sigma_max ** (1 / rho)
+        self.sigmas = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho
+        
+    def __call__(self, ref):
+        idx = torch.randint(0, len(self.sigmas), [ref.shape[0]])
+        sigma = self.sigmas[idx].view(-1, 1, 1, 1).to(ref)
+        return sigma
+
+#----------------------------------------------------------------------------
+# LogNormal noise sampler.
+
+class LogNormalNoiseSampler:
+    def __init__(self, P_mean=-0.8, P_std=1.6):
+        self.P_mean = P_mean
+        self.P_std = P_std
+
+    def __call__(self, ref):
+        rnd_normal = torch.randn([ref.shape[0], 1, 1, 1])
+        sigma = (rnd_normal * self.P_std + self.P_mean).exp().to(ref)
+        return sigma
 
 #----------------------------------------------------------------------------
 # Noise conditional variational score distillation.
 
 @persistence.persistent_class
 class NCVSDLoss:
-    def __init__(
-        self, 
-        P_mean      = -0.8, 
-        P_std       = 1.6,
-        sigma_data  = 0.5
-    ):
-        self.P_mean = P_mean
-        self.P_std = P_std
+    def __init__(self, t_sampler, sigma_data=0.5):
+        self.t_sampler = t_sampler
         self.sigma_data = sigma_data
 
     def __call__(
@@ -66,9 +76,7 @@ class NCVSDLoss:
         labels: torch.Tensor = None
     ):        
         x, logvar = generator(y, sigma, labels, return_logvar=True)
-        
-        rnd_normal_t = torch.randn([y.shape[0], 1, 1, 1], device=y.device)
-        t = (rnd_normal_t * self.P_std + self.P_mean).exp()
+        t = self.t_sampler(x)
         weight_t = (t ** 2 + self.sigma_data ** 2) / (t * self.sigma_data) ** 2
         xt = x + torch.randn_like(x) * t
         
@@ -88,14 +96,8 @@ class NCVSDLoss:
 
 @persistence.persistent_class
 class DSMLoss:
-    def __init__(
-        self, 
-        P_mean        = -0.8, 
-        P_std         = 1.6,
-        sigma_data    = 0.5
-    ):
-        self.P_mean = P_mean
-        self.P_std = P_std
+    def __init__(self, t_sampler, sigma_data=0.5):
+        self.t_sampler = t_sampler
         self.sigma_data = sigma_data
 
     def __call__(
@@ -108,8 +110,7 @@ class DSMLoss:
     ): 
         with torch.no_grad():
             x = generator(y, sigma, labels)
-        rnd_normal_t = torch.randn([x.shape[0], 1, 1, 1], device=x.device)
-        t = (rnd_normal_t * self.P_std + self.P_mean).exp()
+        t = self.t_sampler(x)
         weight_t = (t ** 2 + self.sigma_data ** 2) / (t * self.sigma_data) ** 2
         xt = x + torch.randn_like(x) * t
 
@@ -122,14 +123,8 @@ class DSMLoss:
 
 @persistence.persistent_class
 class DiscriminatorLoss:
-    def __init__(
-        self, 
-        P_mean        = -0.8, 
-        P_std         = 1.6,
-        sigma_data    = 0.5
-    ):
-        self.P_mean = P_mean
-        self.P_std = P_std
+    def __init__(self, t_sampler, sigma_data=0.5):
+        self.t_sampler = t_sampler
         self.sigma_data = sigma_data
 
     def __call__(
@@ -143,8 +138,7 @@ class DiscriminatorLoss:
     ): 
         with torch.no_grad():
             x = generator(y, sigma, labels)
-        rnd_normal_t = torch.randn([x.shape[0], 1, 1, 1], device=x.device)
-        t = (rnd_normal_t * self.P_std + self.P_mean).exp()
+        t = self.t_sampler(x)
         real_xt = images + torch.randn_like(images) * t
         fake_xt = x + torch.randn_like(x) * t
 
@@ -181,15 +175,21 @@ def training_loop(
     discriminator_loss_kwargs = dict(class_name='training.training_loop.DiscriminatorLoss'),
     optimizer_kwargs          = dict(class_name='torch.optim.Adam', betas=(0.9, 0.99)),
     lr_kwargs                 = dict(func_name='training.training_loop.learning_rate_schedule'),
-    ema_kwargs                = dict(class_name='training.phema.PowerFunctionEMA', stds=[0.050, 0.100]),
-    gamma                     = 0.414,     # TODO.
+    ema_kwargs                = dict(class_name='training.phema.PowerFunctionEMA', stds=[0.050, 0.100]),    
+    sigma_sampler_kwargs      = None,
+    vsd_t_sampler_kwargs      = None,
+    dsm_t_sampler_kwargs      = None,
+    cls_t_sampler_kwargs      = None,
+    
+    gamma                     = 0.414,     # Stochasticity strength of generative denoiser.
     init_sigma                = 80.0,      # Maximum noise level.
     eval_ts                   = None,      # inference steps for evaluation. None = no evaluation.
     num_eval_samples          = 64,        # Number of samples for evaluation.
     eval_batch_size           = 8,         # Batch size for evaluation.
     g_lr_scaling              = 1,         # Learning rate scaling factor for the generator.
     d_lr_scaling              = 1,         # Learning rate scaling factor for the discriminator.
-    gan_warmup_Kimg           = 33555,     # Number of batches to warm up the GAN loss.
+    gan_warmup_Kimg           = 0,         # Number of K images to warm up the GAN loss.
+    gan_warmup_batches        = 0,         # Number of training step to warm up the GAN loss.
  
     run_dir                   = '.',       # Output directory.
     seed                      = 0,         # Global random seed.
@@ -227,6 +227,7 @@ def training_loop(
     assert snapshot_nimg is None or (snapshot_nimg % batch_size == 0 and snapshot_nimg % 1024 == 0)
     assert checkpoint_nimg is None or (checkpoint_nimg % batch_size == 0 and checkpoint_nimg % 1024 == 0)
     assert num_eval_samples % int(num_eval_samples ** 0.5) == 0
+    assert gan_warmup_Kimg == 0 or gan_warmup_batches == 0, "GAN warmup should be specified using either gan_warmup_Kimg or gan_warmup_batches, but not both."
 
     # Setup dataset.
     dist.print0('Loading dataset...')
@@ -257,9 +258,15 @@ def training_loop(
     g_optimizer = dnnlib.util.construct_class_by_name(params=ddp_generator.parameters(), **optimizer_kwargs)
     s_optimizer = dnnlib.util.construct_class_by_name(params=ddp_score_model.parameters(), **optimizer_kwargs)
     d_optimizer = dnnlib.util.construct_class_by_name(params=ddp_discriminator.parameters(), **optimizer_kwargs)
-    vsd_loss_fn = dnnlib.util.construct_class_by_name(**vsd_loss_kwargs)
-    dsm_loss_fn = dnnlib.util.construct_class_by_name(**dsm_loss_kwargs)
-    discriminator_loss_fn = dnnlib.util.construct_class_by_name(**discriminator_loss_kwargs)
+
+    # Setup noise samplers and loss functions.
+    sigma_sampler = dnnlib.util.construct_class_by_name(**sigma_sampler_kwargs)
+    vsd_t_sampler = dnnlib.util.construct_class_by_name(**vsd_t_sampler_kwargs)
+    dsm_t_sampler = dnnlib.util.construct_class_by_name(**dsm_t_sampler_kwargs)
+    cls_t_sampler = dnnlib.util.construct_class_by_name(**cls_t_sampler_kwargs)
+    vsd_loss_fn = dnnlib.util.construct_class_by_name(**vsd_loss_kwargs, t_sampler=vsd_t_sampler)
+    dsm_loss_fn = dnnlib.util.construct_class_by_name(**dsm_loss_kwargs, t_sampler=dsm_t_sampler)
+    discriminator_loss_fn = dnnlib.util.construct_class_by_name(**discriminator_loss_kwargs, t_sampler=cls_t_sampler)
     
     # Load previous checkpoint and decide how long to train.
     checkpoint = dist.CheckpointIO(
@@ -390,7 +397,7 @@ def training_loop(
             with misc.ddp_sync(ddp_score_model, (round_idx == num_accumulation_rounds - 1)):
                 images, labels = next(dataset_iterator)
                 images = encoder.encode_latents(images.to(device))
-                sigma = karras_sigma_sampler(images.shape[0], images.device)
+                sigma = sigma_sampler(images)
                 y = images + torch.randn_like(images) * sigma
                 dsm_loss = dsm_loss_fn(
                     generator=ddp_generator,
@@ -423,7 +430,7 @@ def training_loop(
             with misc.ddp_sync(ddp_discriminator, (round_idx == num_accumulation_rounds - 1)):
                 images, labels = next(dataset_iterator)
                 images = encoder.encode_latents(images.to(device))
-                sigma = karras_sigma_sampler(images.shape[0], images.device)
+                sigma = sigma_sampler(images)
                 y = images + torch.randn_like(images) * sigma
                 fake_loss, real_loss = discriminator_loss_fn(
                     generator=ddp_generator,
@@ -453,14 +460,14 @@ def training_loop(
         ddp_discriminator.eval().requires_grad_(False)
         ddp_generator.train().requires_grad_(True)
         g_optimizer.zero_grad(set_to_none=True)        
-        disable_gan = state.cur_nimg < gan_warmup_Kimg * 1000
+        disable_gan = (state.cur_nimg < gan_warmup_Kimg * 1000) or (state.cur_nimg < gan_warmup_batches * batch_size)
 
         # Forward & backward.
         for round_idx in range(num_accumulation_rounds):
             with misc.ddp_sync(ddp_generator, (round_idx == num_accumulation_rounds - 1)):
                 images, labels = next(dataset_iterator)
                 images = encoder.encode_latents(images.to(device))
-                sigma = karras_sigma_sampler(images.shape[0], images.device)
+                sigma = sigma_sampler(images)
                 y = images + torch.randn_like(images) * sigma
                 vsd_loss, gan_loss = vsd_loss_fn(
                     generator=ddp_generator,

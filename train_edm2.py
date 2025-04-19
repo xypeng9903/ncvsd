@@ -58,12 +58,15 @@ def setup_training_config(preset: str, **opts):
         g_lr_scaling=preset['g_lr_scaling'],
         d_lr_scaling=preset['d_lr_scaling'],
         gan_loss_scaling=preset['gan_loss_scaling'],
-        gan_warmup_batches=preset['gan_warmup_batches'],
+        gan_warmup_Kimg=preset.get('gan_warmup_Kimg', 0),
+        gan_warmup_batches=preset.get('gan_warmup_batches', 0), # compatiable with old presets
         eval_ts=parse_int_list(opts.ts) if opts.ts else None,
     )
     c.network_kwargs = dnnlib.EasyDict(**preset['network_kwargs'])
-    c.vsd_loss_kwargs = dnnlib.EasyDict(class_name='training.training_loop.NCVSDLoss', **preset['vsd_loss_kwargs'])
-    c.dsm_loss_kwargs = dnnlib.EasyDict(class_name='training.training_loop.DSMLoss', **preset['dsm_loss_kwargs'])
+    c.sigma_sampler_kwargs = dnnlib.EasyDict(**preset['sigma_sampler_kwargs'])
+    c.vsd_t_sampler_kwargs = dnnlib.EasyDict(**preset['vsd_t_sampler_kwargs'])
+    c.dsm_t_sampler_kwargs = dnnlib.EasyDict(**preset['dsm_t_sampler_kwargs'])
+    c.cls_t_sampler_kwargs = dnnlib.EasyDict(**preset['cls_t_sampler_kwargs'])
     c.lr_kwargs = dnnlib.EasyDict(func_name='training.training_loop.learning_rate_schedule', **preset['lr_kwargs'])
     
     # Performance-related options.

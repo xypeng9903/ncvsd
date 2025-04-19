@@ -16,13 +16,13 @@ pixel:
   sampler:
     ts: null
     ema_sigma: 0.2
-    ema_decay: 0.0
+    ema_decay: 0.6
 
   lgvd:
     c1: 0.1
     c2: 0.05
     steps: 100
   
-  beta: 0.003
+  beta: 1e-3
 
   runs: 4

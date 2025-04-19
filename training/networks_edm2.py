@@ -365,7 +365,6 @@ class Precond(torch.nn.Module):
 
 @persistence.persistent_class
 class UNetEncoder(torch.nn.Module):
-
     def __init__(self,
         img_resolution,                     # Image resolution.
         img_channels,                       # Image channels.

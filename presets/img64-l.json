@@ -10,13 +10,23 @@
     "g_lr_scaling": 0.01,
     "d_lr_scaling": 0.01,
     "gan_loss_scaling": 1,
-    "gan_warmup_Kimg": 33555,
-    "vsd_loss_kwargs": {
-        "P_mean": -0.8, 
+    "gan_warmup_Kimg": 16778,
+    "sigma_sampler_kwargs": {
+        "class_name": "training.training_loop.UniformNoiseSampler"
+    },
+    "vsd_t_sampler_kwargs": {
+        "class_name": "training.training_loop.LogNormalNoiseSampler",
+        "P_mean": -0.8,
         "P_std": 1.6
     },
-    "dsm_loss_kwargs": {
-        "P_mean": -0.8, 
+    "dsm_t_sampler_kwargs": {
+        "class_name": "training.training_loop.LogNormalNoiseSampler",
+        "P_mean": -0.8,
+        "P_std": 1.6
+    },
+    "cls_t_sampler_kwargs": {
+        "class_name": "training.training_loop.LogNormalNoiseSampler",
+        "P_mean": -0.8,
         "P_std": 1.6
     },
     "lr_kwargs": {

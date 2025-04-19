@@ -232,6 +232,8 @@ class ImageFolderDataset(Dataset):
             else:
                 image = np.array(PIL.Image.open(f))
                 image = image.reshape(*image.shape[:2], -1).transpose(2, 0, 1)
+        if image.shape[0] == 4:
+            image = image[:3]
         return image
 
     def _load_raw_labels(self):
