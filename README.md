@@ -41,11 +41,11 @@ The `{MODEL_NAME}` can be one of the following:
 
 \* Please modify the `DISTRIBUTED_ARGS` in the scripts according to your training environment.
 
-\* The batch size per gpu (controlled by `--batch-gpu` in the bash scripts) has been optimized for training under NVIDIA A100-80G GPUs. If you run out of GPU memory, please consider modifying `--batch-gpu` to reduce memory cost. Note that similar to the [EDM2 training](https://github.com/NVlabs/edm2?tab=readme-ov-file#training-new-models), modifying `--batch-gpu` is safe in the sense that it has no interaction with the other hyperparameters.  
+\* The batch size per GPU (controlled by `--batch-gpu` in the bash scripts) has been optimized for training under NVIDIA A100-80G GPUs. If you run out of GPU memory, please consider modifying `--batch-gpu` to reduce memory cost. Note that, similar to the [EDM2 training](https://github.com/NVlabs/edm2?tab=readme-ov-file#training-new-models), modifying `--batch-gpu` is safe in the sense that it has no interaction with the other hyperparameters.  
 
 ## Class-conditional image generation
 
-NCVSD acheieves the following image generation performance of ImageNet-64x64 and ImageNet-512x512 datasets:
+NCVSD achieves the following image generation performance on ImageNet-64x64 and ImageNet-512x512 datasets:
 
 *Image Generation on ImageNet-64x64:*
 | Model | Checkpoint | 1-step FID | 2-step FID | 4-step FID |
