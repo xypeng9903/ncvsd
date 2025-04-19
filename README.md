@@ -1,29 +1,35 @@
-## Noise Conditional Variational Score Distillation &mdash; Official PyTorch implementation
+## Noise Conditional Variational Score Distillation &mdash; Official PyTorch Implementation
 
 ![Overview](assets/overview.jpg "Overview")
 
-**Noise Conditional Variational Score Distillation** <br>
-Xinyu Peng, Ziyang Zheng, Yaoming Wang, Han Li, Nuowen Kan, Wenrui Dai, Chenglin Li, Junni Zou, Hongkai Xiong <br>
+**Noise Conditional Variational Score Distillation**  
+Xinyu Peng, Ziyang Zheng, Yaoming Wang, Han Li, Nuowen Kan, Wenrui Dai, Chenglin Li, Junni Zou, Hongkai Xiong  
 https://arxiv.org/abs/2402.02149v2
 
-**Abstract:** *We propose Noise Conditional Variational Score Distillation (NCVSD), a novel method for distilling pretrained diffusion model into generative denoiser. We achieve this by revealing that the unconditional score function implicitly characterizes the score function of denoising posterior distributions. By integrating this insight into the Variational Score Distillation (VSD) framework, we enable scalable learning of generative denoisers capable of approximating samples from the denoising posterior distribution across a wide range of noise levels. The proposed generative denoisers exhibit desirable properties that allow fast generation while preserve the benefit of iterative refinement: (1) fast one-step generation through sampling from pure Gaussian noise at high noise levels; (2) improved sample quality by scaling the test-time compute with multi-step sampling; and (3) zero-shot probabilistic inference for flexible and controllable sampling. We evaluate NCVSD through extensive experiments, including class-conditional image generation and inverse problem solving. By scaling the test-time compute, our method outperforms teacher diffusion models and is on par with consistency models of larger sizes. Additionally, with significantly fewer NFEs than diffusion-based methods, we achieve record-breaking LPIPS on inverse problems.*
+**Abstract:**  
+*We propose Noise Conditional Variational Score Distillation (NCVSD), a novel method for distilling pretrained diffusion models into generative denoisers. We achieve this by revealing that the unconditional score function implicitly characterizes the score function of denoising posterior distributions. By integrating this insight into the Variational Score Distillation (VSD) framework, we enable scalable learning of generative denoisers capable of approximating samples from the denoising posterior distribution across a wide range of noise levels. The proposed generative denoisers exhibit desirable properties that allow fast generation while preserving the benefits of iterative refinement: (1) fast one-step generation through sampling from pure Gaussian noise at high noise levels; (2) improved sample quality by scaling the test-time compute with multi-step sampling; and (3) zero-shot probabilistic inference for flexible and controllable sampling. We evaluate NCVSD through extensive experiments, including class-conditional image generation and inverse problem solving. By scaling the test-time compute, our method outperforms teacher diffusion models and is on par with consistency models of larger sizes. Additionally, with significantly fewer NFEs than diffusion-based methods, we achieve record-breaking LPIPS on inverse problems.*
 
 ## Requirements
+
 ### Environment
-- 64-bit Python 3.9 and PyTorch 2.1 (see https://pytorch.org).
-- Python libraries: `pip3 install -r requirements.txt`
+- 64-bit Python 3.9 and PyTorch 2.1 ([PyTorch installation guide](https://pytorch.org))
+- Python libraries:  
+  ```bash
+  pip3 install -r requirements.txt
+  ```
 
 ### Data
-Follow the instructions in [EDM2](https://github.com/NVlabs/edm2?tab=readme-ov-file#preparing-datasets) to prepare the following zip files into the `../data/edm2` folder:
+Follow the instructions in [EDM2](https://github.com/NVlabs/edm2?tab=readme-ov-file#preparing-datasets) to prepare the following zip files in the `../data/edm2` folder:
 - `img64.zip`
 - `img512.zip`
 - `img512-sd.zip`
 
-### Teacher EDM2 models
-Download EDM2 models into `../model_zoo/edm2` folder from the links listed in `quick_start/edm2.txt`.
+### Teacher EDM2 Models
+Download EDM2 models into the `../model_zoo/edm2` folder from the links listed in `quick_start/edm2.txt`.
 
 ## Training
-Start training by running
+
+Start training by running:
 ```bash
 bash quick_start/train-{MODEL_NAME}.sh
 ```
