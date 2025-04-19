@@ -24,7 +24,7 @@ Follow the instructions in [EDM2](https://github.com/NVlabs/edm2?tab=readme-ov-f
 - `img512.zip`
 - `img512-sd.zip`
 
-### Teacher EDM2 Models
+### Teacher EDM2 models
 Download EDM2 models into the `../model_zoo/edm2` folder from the links listed in `quick_start/edm2.txt`.
 
 ## Training
@@ -85,7 +85,7 @@ To reproduce the FID scores, run `calculate_metrics.py` and specifying
 - `--ref`, pre-computed reference statistics for the dataset.
 - `--seed`, random seed, 123456789 by default.
 
-For `--ref`, we use available reference statistics provided in https://nvlabs-fi-cdn.nvidia.com/edm2/dataset-refs:
+For `--ref`, we use available reference statistics provided in https://nvlabs-fi-cdn.nvidia.com/edm2/dataset-refs/:
 - Set `--ref="https://nvlabs-fi-cdn.nvidia.com/edm2/dataset-refs/img64.pkl"` for computing FID on ImageNet-64x64 dataset.
 - Set `--ref="https://nvlabs-fi-cdn.nvidia.com/edm2/dataset-refs/img512.pkl"` for computing FID on ImageNet-512x512 dataset.
 
