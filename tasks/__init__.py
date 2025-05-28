@@ -191,10 +191,6 @@ class GaussianNoise(Noise):
 
 from .gaussian_blur import GaussialBlurCircular
 from .motion_blur import MotionBlurCircular
-from .super_resolution_svd import SuperResolutionSVD
-from .coded_diffraction_patterns import CodedDiffractionPatterns
 from .phase_retrieval import PhaseRetrieval
 from .inpainting import Inpainting
-from .high_dynamic_range import HighDynamicRange
-from .nonlinear_blur import NonlinearBlur
 from .super_resolution import SuperResolution
