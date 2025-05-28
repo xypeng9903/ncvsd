@@ -4,7 +4,6 @@
 
 **Noise Conditional Variational Score Distillation**  
 Xinyu Peng, Ziyang Zheng, Yaoming Wang, Han Li, Nuowen Kan, Wenrui Dai, Chenglin Li, Junni Zou, Hongkai Xiong  
-https://arxiv.org/abs/2402.02149v2
 
 **Abstract:**  
 *We propose Noise Conditional Variational Score Distillation (NCVSD), a novel method for distilling pretrained diffusion models into generative denoisers. We achieve this by revealing that the unconditional score function implicitly characterizes the score function of denoising posterior distributions. By integrating this insight into the Variational Score Distillation (VSD) framework, we enable scalable learning of generative denoisers capable of approximating samples from the denoising posterior distribution across a wide range of noise levels. The proposed generative denoisers exhibit desirable properties that allow fast generation while preserving the benefits of iterative refinement: (1) fast one-step generation through sampling from pure Gaussian noise at high noise levels; (2) improved sample quality by scaling the test-time compute with multi-step sampling; and (3) zero-shot probabilistic inference for flexible and controllable sampling. We evaluate NCVSD through extensive experiments, including class-conditional image generation and inverse problem solving. By scaling the test-time compute, our method outperforms teacher diffusion models and is on par with consistency models of larger sizes. Additionally, with significantly fewer NFEs than diffusion-based methods, we achieve record-breaking LPIPS on inverse problems.*
@@ -50,16 +49,18 @@ NCVSD achieves the following image generation performance on ImageNet-64x64 and 
 *Image Generation on ImageNet-64x64:*
 | Model | Checkpoint | 1-step FID | 2-step FID | 4-step FID |
 | - | - | - | - | - |
-NCVSD-S | [img64-s.pkl]() | 3.13 | 2.66 | 2.14 |
-NCVSD-M | [img64-m.pkl]() | 3.04 | 2.47 | 1.92 |
-NCVSD-L | [img64-l.pkl]() | 2.96 | 2.35 | 1.53 |
+NCVSD-S | [ncvsd-img64-s.pkl]() | 3.13 | 2.66 | 2.14 |
+NCVSD-M | [ncvsd-img64-m.pkl]() | 3.04 | 2.47 | 1.92 |
+NCVSD-L | [ncvsd-img64-l.pkl]() | 2.96 | 2.35 | 1.53 |
 
 *Image Generation on ImageNet-512x512:*
 | Model | Checkpoint | 1-step FID | 2-step FID | 4-step FID |
 | - | - | - | - | - |
-NCVSD-S | [img512-s.pkl]() |2.95 | 2.60 | 2.00 |
-NCVSD-M | [img512-m.pkl]() |2.85 | 2.08 | 1.92 |
-NCVSD-L | [img512-l.pkl]() |2.56 | 2.03 | 1.76 |
+NCVSD-S | [ncvsd-img512-s.pkl]() |2.95 | 2.60 | 2.00 |
+NCVSD-M | [ncvsd-img512-m.pkl]() |2.85 | 2.08 | 1.92 |
+NCVSD-L | [ncvsd-img512-l.pkl]() |2.56 | 2.03 | 1.76 |
+
+\* The checkpoints are currently undergoing an opensource approval process of Meituan Inc and cannot be made public available at this time. We will upload them as soon as they are approved.
 
 ### Generating images
 
@@ -72,7 +73,7 @@ For example, to generate 4 images using `NCVSD-S` model trained on ImageNet-512x
 
 ```bash
 python generate_images.py \
-    --net="/path/to/img512-s.pkl" \
+    --net="path/to/ncvsd-img512-s.pkl" \
     --ts="10,22,39" \
     --seeds=0-3
 ```
@@ -93,17 +94,18 @@ For example, to evaluate 2-step FID of `NCVSD-S` on ImageNet-512x512 dataset, ru
 
 ```bash
 torchrun --standalone --nproc_per_node=8 calculate_metrics.py gen \
-    --net="/path/to/img512-s.pkl" \
+    --net="path/to/ncvsd-img512-s.pkl" \
     --ts="10,22,39" \
     --ref="https://nvlabs-fi-cdn.nvidia.com/edm2/dataset-refs/img512.pkl" \
     --seed=123456789
 ```
 
 ## Inverse problem solving
-Solving inverse problems with PnP-GD by running
+1. Download the FFHQ checkpoint [ncvsd-ffhq256.pkl](https://huggingface.co/xypeng9903/ncvsd/resolve/main/edm2-ffhq256-xs.pkl?download=true) to `../model_zoo/ncvsd`.
+2. Download the test data [test.zip](https://drive.google.com/file/d/1I8at4Y1MPrKV8yPHq_6sn6Et7Elyxavx/view?usp=drive_link) and unzip to `../data`.
 
 ```bash
-bash quick_start/posterior-sample.sh {TASK_NAME}
+bash quick_start/posterior-sample.sh TASK_NAME
 ```
 
 The `{TASK_NAME}` can be one of the following:
@@ -114,8 +116,16 @@ The `{TASK_NAME}` can be one of the following:
 - `phase_retrieval`
 
 ## Citation
+`TODO`
 
 ## Acknowledgments
 
+This code is based on: 
+
+- [EDM2](https://github.com/NVlabs/edm2): Provide the code structure.
+
+- [DAPS](https://github.com/zhangbingliang2019/DAPS): Provide the evaluation code for inverse problem solving.
+
+- [PnP-DM](https://github.com/zihuiwu/PnP-DM-public): Provide the code for closed-form solutions of likelihood steps.
 
 

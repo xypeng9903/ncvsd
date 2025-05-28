@@ -15,7 +15,7 @@ pixel:
 
   sampler:
     ts: null
-    ema_sigma: 0.2
-    ema_decay: 0.6
+    ema_sigma: 100
+    ema_decay: 0.2
 
   beta: 1e-4
