@@ -23,6 +23,14 @@ Follow the instructions in [EDM2](https://github.com/NVlabs/edm2?tab=readme-ov-f
 - `img512.zip`
 - `img512-sd.zip`
 
+In addition, prepare `ffhq256.zip` with the following command:
+```
+python dataset_tool.py convert \
+    --source=path/to/ffhq \
+    --dest=../data/edm2/ffhq256.zip \
+    --resolution=256x256 --transform=center-crop-dhariwal 
+```
+
 ### Teacher EDM2 models
 Download EDM2 models into the `../model_zoo/edm2` folder from the links listed in `quick_start/edm2.txt`.
 
@@ -75,9 +83,9 @@ For example, to generate 4 images using `NCVSD-S` model trained on ImageNet-512x
 
 ```bash
 python generate_images.py \
-    --net="path/to/ncvsd-img512-s.pkl" \
-    --ts="10,22,39" \
-    --outdir="class-0" \
+    --net=path/to/ncvsd-img512-s.pkl \
+    --ts=10,22,39 \
+    --outdir=class-0 \
     --class=0 \
     --seeds=0-3
 ```
@@ -91,16 +99,16 @@ To reproduce the FID scores, run `calculate_metrics.py` and specifying
 - `--seed`, random seed, 123456789 by default.
 
 For `--ref`, we use available reference statistics provided in https://nvlabs-fi-cdn.nvidia.com/edm2/dataset-refs/:
-- Set `--ref="https://nvlabs-fi-cdn.nvidia.com/edm2/dataset-refs/img64.pkl"` for computing FID on ImageNet-64x64 dataset.
-- Set `--ref="https://nvlabs-fi-cdn.nvidia.com/edm2/dataset-refs/img512.pkl"` for computing FID on ImageNet-512x512 dataset.
+- Set `--ref=https://nvlabs-fi-cdn.nvidia.com/edm2/dataset-refs/img64.pkl` for computing FID on ImageNet-64x64 dataset.
+- Set `--ref=https://nvlabs-fi-cdn.nvidia.com/edm2/dataset-refs/img512.pkl` for computing FID on ImageNet-512x512 dataset.
 
 For example, to evaluate 2-step FID of `NCVSD-S` on ImageNet-512x512 dataset, run
 
 ```bash
 torchrun --standalone --nproc_per_node=8 calculate_metrics.py gen \
-    --net="path/to/ncvsd-img512-s.pkl" \
-    --ts="10,22,39" \
-    --ref="https://nvlabs-fi-cdn.nvidia.com/edm2/dataset-refs/img512.pkl" \
+    --net=path/to/ncvsd-img512-s.pkl \
+    --ts=10,22,39 \
+    --ref=https://nvlabs-fi-cdn.nvidia.com/edm2/dataset-refs/img512.pkl \
     --seed=123456789
 ```
 
