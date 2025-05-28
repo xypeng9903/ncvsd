@@ -1,4 +1,4 @@
-## Noise Conditional Variational Score Distillation &mdash; Official PyTorch Implementation
+## Noise Conditional Variational Score Distillation <br><sub>Official PyTorch implementation of the ICML 2025 paper</sub>
 
 ![Overview](assets/overview.jpg "Overview")
 
@@ -60,13 +60,15 @@ NCVSD-S | [ncvsd-img512-s.pkl]() |2.95 | 2.60 | 2.00 |
 NCVSD-M | [ncvsd-img512-m.pkl]() |2.85 | 2.08 | 1.92 |
 NCVSD-L | [ncvsd-img512-l.pkl]() |2.56 | 2.03 | 1.76 |
 
-\* The checkpoints are currently undergoing an opensource approval process of Meituan Inc and cannot be made public available at this time. We will upload them as soon as they are approved.
+\* The checkpoints are currently undergoing Meituan Inc.'s open-source approval process and are not yet publicly available. They will be uploaded soon.
 
 ### Generating images
 
 To generate images using provided pkl checkpoints, run `generate_images.py` and specifying
 - `--net`, the pkl checkpoint.
 - `--ts`, the sampling timesteps, please refer to Table 3 in the paper. * You should add 39 at the last of the timesteps. 
+- `--outdir`, where to save the generation images.
+- `--class`, (optional), the class of generation images.
 - `--seeds`, random seed.
 
 For example, to generate 4 images using `NCVSD-S` model trained on ImageNet-512x512 dataset with 2 NFEs (sampling timesteps set to 10,22), run
@@ -75,6 +77,8 @@ For example, to generate 4 images using `NCVSD-S` model trained on ImageNet-512x
 python generate_images.py \
     --net="path/to/ncvsd-img512-s.pkl" \
     --ts="10,22,39" \
+    --outdir="class-0" \
+    --class=0 \
     --seeds=0-3
 ```
 
