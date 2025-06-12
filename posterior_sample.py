@@ -6,7 +6,7 @@
 # You should have received a copy of the license along with this
 # work. If not, see http://creativecommons.org/licenses/by-nc-sa/4.0/
 
-"""Zero-shot probablistic inference using PnP-NCVSD."""
+"""Zero-shot probablistic inference using PnP-GD."""
 
 import torch
 import tqdm
@@ -37,10 +37,10 @@ def karras_sigmas(steps, device, sigma_min=0.002, sigma_max=80.0, rho=7.0):
     return sigmas
 
 #----------------------------------------------------------------------------
-# PnP-NCVSD. A plug-and-play probabilistic inference method for NCVSD.
+# PnP-GD. Plug-and-play probabilistic inference for generative denoisers.
 
 @torch.no_grad()
-def pnp_ncvsd_sampler(
+def pnp_gd_sampler(
     net: GenerativeDenoiser, 
     noise,
     sigmas,
@@ -106,7 +106,7 @@ def ula_proximal_generator(
 
 @click.group()
 def cmdline():
-    """Solving inverse problems using PnP-NCVSD."""
+    """Solving inverse problems using PnP-GD."""
 
 #----------------------------------------------------------------------------
 # 'pixel' subcommand.
@@ -207,12 +207,12 @@ def pixel(**opts):
         y = operator.forward(images)
         y = y + torch.randn_like(y) * sigma_y
         
-        # PnP-NCVSD.
+        # PnP-GD.
         if hasattr(operator, 'proximal_generator'):
             likelihood_step_fn = lambda x0, sigma, pbar: operator.proximal_generator(x0, y, (0.5 * c.beta) ** 0.5, sigma) # \beta = 2 \sigma_y^2
         else:
             likelihood_step_fn = lambda x0, sigma, pbar: ula_proximal_generator(x0, sigma, y, operator.forward, beta=c.beta, pbar=pbar, **c.lgvd)
-        sampler = lambda noise: pnp_ncvsd_sampler(net, noise, sigmas, likelihood_step_fn, verbose=True, **c.sampler)
+        sampler = lambda noise: pnp_gd_sampler(net, noise, sigmas, likelihood_step_fn, verbose=True, **c.sampler)
         x0hat = torch.stack([sampler(torch.randn_like(images)) for _ in range(c.runs)], dim=0) # runs, B, C, H, W
         
         # Save samples.
