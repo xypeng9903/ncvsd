@@ -3,7 +3,8 @@
 ![Overview](assets/overview.jpg "Overview")
 
 **Noise Conditional Variational Score Distillation**  
-Xinyu Peng, Ziyang Zheng, Yaoming Wang, Han Li, Nuowen Kan, Wenrui Dai, Chenglin Li, Junni Zou, Hongkai Xiong  
+Xinyu Peng, Ziyang Zheng, Yaoming Wang, Han Li, Nuowen Kan, Wenrui Dai, Chenglin Li, Junni Zou, Hongkai Xiong <br>
+https://arxiv.org/abs/2506.09416
 
 **Abstract:**  
 *We propose Noise Conditional Variational Score Distillation (NCVSD), a novel method for distilling pretrained diffusion models into generative denoisers. We achieve this by revealing that the unconditional score function implicitly characterizes the score function of denoising posterior distributions. By integrating this insight into the Variational Score Distillation (VSD) framework, we enable scalable learning of generative denoisers capable of approximating samples from the denoising posterior distribution across a wide range of noise levels. The proposed generative denoisers exhibit desirable properties that allow fast generation while preserving the benefits of iterative refinement: (1) fast one-step generation through sampling from pure Gaussian noise at high noise levels; (2) improved sample quality by scaling the test-time compute with multi-step sampling; and (3) zero-shot probabilistic inference for flexible and controllable sampling. We evaluate NCVSD through extensive experiments, including class-conditional image generation and inverse problem solving. By scaling the test-time compute, our method outperforms teacher diffusion models and is on par with consistency models of larger sizes. Additionally, with significantly fewer NFEs than diffusion-based methods, we achieve record-breaking LPIPS on inverse problems.*
@@ -68,7 +69,7 @@ NCVSD-S | [ncvsd-img512-s.pkl]() |2.95 | 2.60 | 2.00 |
 NCVSD-M | [ncvsd-img512-m.pkl]() |2.85 | 2.08 | 1.92 |
 NCVSD-L | [ncvsd-img512-l.pkl]() |2.56 | 2.03 | 1.76 |
 
-\* The checkpoints are currently undergoing Meituan Inc.'s open-source approval process and are not yet publicly available. They will be uploaded soon.
+\* The checkpoints are not yet publicly available, pending review under Meituan's open-source protocol.
 
 ### Generating images
 
@@ -85,8 +86,7 @@ For example, to generate 4 images using `NCVSD-S` model trained on ImageNet-512x
 python generate_images.py \
     --net=path/to/ncvsd-img512-s.pkl \
     --ts=10,22,39 \
-    --outdir=class-0 \
-    --class=0 \
+    --outdir=out \
     --seeds=0-3
 ```
 
@@ -128,7 +128,18 @@ The `{TASK_NAME}` can be one of the following:
 - `phase_retrieval`
 
 ## Citation
-`TODO`
+If you find this repo helpful, please cite:
+```
+@misc{peng2025noiseconditionalvariationalscore,
+      title={Noise Conditional Variational Score Distillation}, 
+      author={Xinyu Peng and Ziyang Zheng and Yaoming Wang and Han Li and Nuowen Kan and Wenrui Dai and Chenglin Li and Junni Zou and Hongkai Xiong},
+      year={2025},
+      eprint={2506.09416},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/2506.09416}, 
+}
+```
 
 ## Acknowledgments
 

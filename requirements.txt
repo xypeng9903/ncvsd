@@ -6,3 +6,4 @@ requests==2.32.3
 scipy==1.13.1
 tqdm==4.67.1
 tensorboard==2.19.0
+piq==0.8.0
