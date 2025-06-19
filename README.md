@@ -131,14 +131,13 @@ The `{TASK_NAME}` can be one of the following:
 ## Citation
 If you find this repo helpful, please cite:
 ```
-@misc{peng2025noiseconditionalvariationalscore,
-      title={Noise Conditional Variational Score Distillation}, 
-      author={Xinyu Peng and Ziyang Zheng and Yaoming Wang and Han Li and Nuowen Kan and Wenrui Dai and Chenglin Li and Junni Zou and Hongkai Xiong},
-      year={2025},
-      eprint={2506.09416},
-      archivePrefix={arXiv},
-      primaryClass={cs.CV},
-      url={https://arxiv.org/abs/2506.09416}, 
+@inproceedings{
+  peng2025noise,
+  title={Noise Conditional Variational Score Distillation},
+  author={Xinyu Peng and Ziyang Zheng and Yaoming Wang and Han Li and Nuowen Kan and Wenrui Dai and Chenglin Li and Junni Zou and Hongkai Xiong},
+  booktitle={Forty-second International Conference on Machine Learning},
+  year={2025},
+  url={https://openreview.net/forum?id=UYUqCPCZCw}
 }
 ```
 
