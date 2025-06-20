@@ -113,7 +113,7 @@ torchrun --standalone --nproc_per_node=8 calculate_metrics.py gen \
 ```
 
 ## Inverse problem solving
-1. Download the FFHQ checkpoint [ncvsd-ffhq256.pkl](https://huggingface.co/xypeng9903/ncvsd/resolve/main/edm2-ffhq256-xs.pkl?download=true) to `../model_zoo/ncvsd`.
+1. Download the FFHQ checkpoint [ncvsd-ffhq256.pkl](https://huggingface.co/xypeng9903/ncvsd/resolve/main/ncvsd-ffhq256-xs.pkl?download=true) to `../model_zoo/ncvsd`.
 2. Download the test data [test.zip](https://drive.google.com/file/d/1I8at4Y1MPrKV8yPHq_6sn6Et7Elyxavx/view?usp=drive_link) and unzip to `../data`.
 3. Solving inverse problems with PnP-GD by running
 
