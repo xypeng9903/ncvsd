@@ -357,7 +357,7 @@ class Precond(torch.nn.Module):
             return D_x, logvar # u(sigma) in Equation 21
         return D_x
         
-"""Below are model architecture proposed in the paper
+"""Below are model architectures proposed in the paper
 "Noise Conditional Variational Score Distillation"."""
 
 #----------------------------------------------------------------------------
@@ -528,7 +528,7 @@ class UNetDecoder(torch.nn.Module):
         return x
     
 #----------------------------------------------------------------------------
-# Conditioal UNet.
+# Conditional UNet.
 
 @persistence.persistent_class
 class PrecondCondition(torch.nn.Module):
@@ -615,17 +615,17 @@ class GenerativeDenoiser(torch.nn.Module):
         self.gamma = gamma
         
     def forward(
-            self, 
-            y, 
-            sigma, 
-            labels        = None, 
-            return_logvar = False, 
-            ts            = None,
-            t_min         = 0.002,
-            t_max         = 80.0,
-            rho           = 7.0,
-            steps         = 40
-        ):
+        self, 
+        y, 
+        sigma, 
+        labels        = None, 
+        return_logvar = False, 
+        ts            = None,
+        t_min         = 0.002,
+        t_max         = 80.0,
+        rho           = 7.0,
+        steps         = 40
+    ):
         if ts is None:
             return self._forward(y, sigma, labels, return_logvar=return_logvar) 
   
