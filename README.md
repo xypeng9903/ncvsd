@@ -113,11 +113,12 @@ torchrun --standalone --nproc_per_node=8 calculate_metrics.py gen \
 ```
 
 ## Inverse problem solving
-1. Download the FFHQ checkpoint [ncvsd-ffhq256.pkl](https://huggingface.co/xypeng9903/ncvsd/resolve/main/edm2-ffhq256-xs.pkl?download=true) to `../model_zoo/ncvsd`.
+1. Download the FFHQ checkpoint [ncvsd-ffhq256.pkl](https://huggingface.co/xypeng9903/ncvsd/resolve/main/ncvsd-ffhq256-xs.pkl?download=true) to `../model_zoo/ncvsd`.
 2. Download the test data [test.zip](https://drive.google.com/file/d/1I8at4Y1MPrKV8yPHq_6sn6Et7Elyxavx/view?usp=drive_link) and unzip to `../data`.
+3. Solving inverse problems with PnP-GD by running
 
 ```bash
-bash quick_start/posterior-sample.sh TASK_NAME
+bash quick_start/posterior-sample.sh {TASK_NAME}
 ```
 
 The `{TASK_NAME}` can be one of the following:
@@ -130,14 +131,13 @@ The `{TASK_NAME}` can be one of the following:
 ## Citation
 If you find this repo helpful, please cite:
 ```
-@misc{peng2025noiseconditionalvariationalscore,
-      title={Noise Conditional Variational Score Distillation}, 
-      author={Xinyu Peng and Ziyang Zheng and Yaoming Wang and Han Li and Nuowen Kan and Wenrui Dai and Chenglin Li and Junni Zou and Hongkai Xiong},
-      year={2025},
-      eprint={2506.09416},
-      archivePrefix={arXiv},
-      primaryClass={cs.CV},
-      url={https://arxiv.org/abs/2506.09416}, 
+@inproceedings{
+  peng2025noise,
+  title={Noise Conditional Variational Score Distillation},
+  author={Xinyu Peng and Ziyang Zheng and Yaoming Wang and Han Li and Nuowen Kan and Wenrui Dai and Chenglin Li and Junni Zou and Hongkai Xiong},
+  booktitle={Forty-second International Conference on Machine Learning},
+  year={2025},
+  url={https://openreview.net/forum?id=UYUqCPCZCw}
 }
 ```
 
