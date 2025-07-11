@@ -20,7 +20,7 @@ pixel:
 
   lgvd:
     c1: 0.1
-    c2: 0.05
+    c2: 0.1
     steps: 100
   
   beta: 1e-3
