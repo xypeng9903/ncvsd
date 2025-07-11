@@ -21,4 +21,4 @@ pixel:
     ema_sigma: 100
     ema_decay: 0.6
 
-  beta: 4e-3
+  beta: 3e-3
